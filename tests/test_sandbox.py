@@ -17,7 +17,7 @@ class SandboxCliTests(unittest.TestCase):
                               env=env, timeout=30)
 
     def write_config(self, path: Path, default_exit: str) -> Path:
-        path.write_text(json.dumps({"default_exit": default_exit}), encoding="utf-8")
+        path.write_text(json.dumps({"exit": default_exit}), encoding="utf-8")
         return path
 
     def test_no_config_means_direct(self):
@@ -30,7 +30,7 @@ class SandboxCliTests(unittest.TestCase):
             self.assertEqual(meta["exit"], "direct")
 
     def test_config_sets_default_exit(self):
-        """配了 default_exit，新沙盒默认走它。"""
+        """配了 exit，新沙盒默认走它。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
             cfg = self.write_config(Path(tmp) / "config.json", "socks5h://127.0.0.1:7897")

@@ -19,18 +19,18 @@
 | 写法 | 含义 |
 |---|---|
 | 不配置 / `--exit direct` | 完全不用代理，走原生环境（出口由本机的 TUN/透明代理决定） |
-| 配置里写 `default_exit` / `--exit socks5h://…` | 显式走指定代理 |
+| 配置里写 `exit` / `--exit socks5h://…` | 显式走指定代理 |
 
 配置文件 `~/.config/claude-sandbox/config.json`（见 `config.example.json`）：
 
 ```json
 {
-  "default_exit": "socks5h://127.0.0.1:7897"
+  "exit": "socks5h://127.0.0.1:7897"
 }
 ```
 
 * 文件不存在 = direct。
-* `default_exit` 可以是任何 `socks5h://` / `http://` 地址。
+* `exit` 可以是任何 `socks5h://` / `http://` 地址。
 * 命令行 `--exit <地址>` 或 `--exit direct` 优先于配置。
 
 ## 手工版（WSL / 本机）
@@ -64,7 +64,7 @@ Windows 任务栏会出现一个浏览器窗口（WSLg）。用完直接关窗�
 
 本机 Clash 在**规则模式**下按域名分流。如果 Claude 的规则被指到别的节点（例如指到你自己的
 VPS），出口就不是你以为的那个。要固定出口，请在 Clash 里给目标节点单独开一个监听端口，
-再把那个端口写进 `default_exit`。
+再把那个端口写进 `exit`。
 
 ## 容器版（46.2 上跑，网页操作）
 

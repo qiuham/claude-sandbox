@@ -49,7 +49,7 @@ CONFIG_FILE = Path(os.path.expanduser(
     os.environ.get("SANDBOX_CONFIG", "~/.config/claude-sandbox/config.json")))
 ROOT = Path(os.path.expanduser(os.environ.get("SANDBOX_ROOT", "~/sandboxes"))).resolve()
 
-DEFAULT_CONFIG = {}   # 没配置 = direct；配了 default_exit 就走它
+DEFAULT_CONFIG = {}   # 没配置 = direct；配了 exit 就走它
 
 NO_DIALOG_PREFS = {
     "browser.sessionstore.resume_from_crash": False,
@@ -95,9 +95,9 @@ def load_config() -> dict:
             user = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             die(f"配置文件读不了: {CONFIG_FILE}: {exc}")
-        value = str(user.get("default_exit") or "").strip()
+        value = str(user.get("exit") or user.get("exit") or "").strip()
         if value:
-            cfg["default_exit"] = value
+            cfg["exit"] = value
     return cfg
 
 
@@ -132,7 +132,7 @@ def resolve_exit(spec: str, cfg: dict) -> tuple[str, str]:
     """
     spec = str(spec or "").strip()
     if not spec:
-        spec = str(cfg.get("default_exit") or "direct").strip() or "direct"
+        spec = str(cfg.get("exit") or "direct").strip() or "direct"
     if spec == "direct":
         return "direct", ""
     if is_proxy_spec(spec):
@@ -308,8 +308,8 @@ def cmd_doctor(args) -> int:
     say(f"配置文件  : {CONFIG_FILE} {'有' if CONFIG_FILE.is_file() else '无（用内置默认）'}")
     say(f"venv      : {'有' if _VENV_PY.is_file() else '没有 .venv'}")
     say("")
-    default = str(cfg.get("default_exit") or "direct")
-    say(f"默认出口  : {default}" + ("（没配置 = direct）" if default == "direct" else ""))
+    default = str(cfg.get("exit") or "direct")
+    say(f"出口      : {default}" + ("（没配置 = direct）" if default == "direct" else ""))
     return 0
 
 

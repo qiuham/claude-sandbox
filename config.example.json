@@ -1,4 +1,4 @@
 {
-  "//": "复制到 ~/.config/claude-sandbox/config.json。不写这个文件 = direct；写了 default_exit = 默认走它。",
-  "default_exit": "socks5h://127.0.0.1:7897"
+  "//": "复制到 ~/.config/claude-sandbox/config.json。不写这个文件 = direct；写了 exit = 默认走它。",
+  "exit": "socks5h://127.0.0.1:7897"
 }
