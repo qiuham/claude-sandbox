@@ -95,6 +95,7 @@ DEFAULT_CONFIG = {
     "fonts": "western",
     "fit_window": True,
     "color_scheme": "dark",
+    "humanize_s": 1.5,          # 单次鼠标动作的时间上限（秒），越大越慢越自然
     "strict_ip": True,
     "dns": {
         "doh_ip": "1.1.1.1",
@@ -110,7 +111,12 @@ DEFAULT_CONFIG = {
     "warmup": {
         "prompts": WARM_PROMPTS,
         "type_delay_ms": 140,      # 每个字的基准间隔（毫秒），真人大概这个量级
-        "type_jitter_ms": 50,      # 上下浮动
+        "type_jitter_ms": 50,
+        "think_every_chars": 18,   # 每打这么多字停一下，像在想
+        "think_pause_min_ms": 250,
+        "think_pause_max_ms": 700,
+        "click_dwell_min_ms": 120,  # 点击前停顿
+        "click_dwell_max_ms": 400,      # 上下浮动
         "send_confirm_s": 15,
         "reply_wait_s": 90,
         "poll_interval_s": 2,

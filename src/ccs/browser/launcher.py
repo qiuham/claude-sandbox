@@ -140,14 +140,14 @@ def close_session(bctx, profile: Path, cfg: dict) -> None:
 
 
 def _context_kwargs(profile: Path, *, headless: bool, proxy: str,
-                    pin: dict | None, prefs: dict) -> dict:
+                    pin: dict | None, cfg: dict) -> dict:
     kw = {
         "seed": store.seed_of(profile)[0],
         "headless": headless,
-        "humanize": True,
+        "humanize": float(cfg.get("humanize_s") or 1.5),
         "locale": "auto",              # 按出口 IP 的地区选语言
         "profile_dir": str(profile),
-        "extra_prefs": prefs,
+        "extra_prefs": cfg["browser"]["prefs"],
     }
     if proxy:
         kw["proxy"] = {"server": proxy.replace("socks5h://", "socks5://")}
@@ -164,8 +164,7 @@ def open_session(name: str, proxy: str, cfg: dict, *,
     process.prepare_profile(profile, grace=_timeouts(cfg)["close_grace_s"])
     # 双保险：即使某个版本不认偏好，也别让崩溃报告器冒出来
     os.environ["MOZ_CRASHREPORTER_NO_REPORT"] = "1"   # 留 dump，不弹窗
-    kw = _context_kwargs(profile, headless=headless, proxy=proxy, pin=pin,
-                         prefs=cfg["browser"]["prefs"])
+    kw = _context_kwargs(profile, headless=headless, proxy=proxy, pin=pin, cfg=cfg)
     fit_window = bool(cfg.get("fit_window", True))
     bctx, browser = open_browser(profile, engine, kw,
                                  fit_window=fit_window, cfg=cfg)

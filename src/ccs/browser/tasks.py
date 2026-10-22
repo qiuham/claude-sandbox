@@ -108,19 +108,48 @@ def _find_input(page, cfg: dict) -> str:
 
 
 def _type_like_human(page, text: str, warmup: dict) -> None:
-    """逐字输入，每个字的间隔带随机抖动。
+    """逐字输入：每字抖动、标点停顿、每隔一段停一下像在想。
 
-    Playwright 的 delay 是固定值，一眼机器；这里按配置的基准值上下浮动，
-    标点后面再停久一点，接近真人打字的节奏。
+    Playwright 的 delay 是固定值，一眼机器；这里所有间隔都带随机。
     """
     base = int(warmup["type_delay_ms"])
     jitter = int(warmup.get("type_jitter_ms") or 0)
-    for char in text:
+    every = int(warmup.get("think_every_chars") or 0)
+    think_min = int(warmup.get("think_pause_min_ms") or 0)
+    think_max = int(warmup.get("think_pause_max_ms") or think_min)
+
+    time.sleep(random.uniform(0.2, 0.6))  # noqa: S311 - 聚焦后的反应时间
+    for index, char in enumerate(text):
         page.keyboard.type(char)
-        pause = base + random.randint(-jitter, jitter)  # noqa: S311 - 打字节奏抖动，不是安全用途
+        pause = base + random.randint(-jitter, jitter)  # noqa: S311 - 打字节奏抖动
         if char in "，。！？,.!?":
             pause += base
+        if every and index and index % every == 0:
+            pause += random.randint(think_min, max(think_min, think_max))  # noqa: S311 - 思考停顿
         time.sleep(max(0, pause) / 1000)
+
+
+def _click_like_human(page, selector: str, warmup: dict) -> None:
+    """移到元素内部一个随机点，停一下再点，而不是精确点中心。"""
+    mouse = getattr(page, "mouse", None)
+    locator = getattr(page, "locator", None)
+    if mouse is None or locator is None:      # 测试里的假页面
+        page.click(selector)
+        return
+    try:
+        box = locator(selector).first.bounding_box()
+    except Exception:  # noqa: BLE001 - 拿不到位置就退回普通点击
+        box = None
+    if not box:
+        page.click(selector)
+        return
+    x = box["x"] + box["width"] * random.uniform(0.25, 0.75)   # noqa: S311
+    y = box["y"] + box["height"] * random.uniform(0.3, 0.7)    # noqa: S311
+    mouse.move(x, y)                                           # 引擎按种子生成曲线轨迹
+    low = int(warmup.get("click_dwell_min_ms") or 0)
+    high = int(warmup.get("click_dwell_max_ms") or low)
+    time.sleep(random.randint(low, max(low, high)) / 1000)     # noqa: S311
+    mouse.click(x, y)
 
 
 def _wait_for_text(page, needle: str, cfg: dict, timeout: float) -> bool:
@@ -159,7 +188,7 @@ def do_warmup(page, prompt: str, cfg: dict) -> str:
         return "no_input"
 
     try:
-        page.click(selector)          # 指针走引擎的人化轨迹（种子决定，带曲线和加减速）
+        _click_like_human(page, selector, warmup)
         _type_like_human(page, prompt, warmup)
         page.keyboard.press("Enter")
     except Exception as exc:  # noqa: BLE001 - 点击/输入失败只算这次养号失败
