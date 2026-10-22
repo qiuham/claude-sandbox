@@ -126,10 +126,10 @@ class SandboxCliTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertRegex(r.stdout, r"DNS 中继\s*: 有")
 
-    def test_screen_defaults_to_1080p(self):
+    def test_screen_defaults_to_2k(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.json")
-            self.assertRegex(r.stdout, r"屏幕\s*: 1920x1080 @ 1x")
+            self.assertRegex(r.stdout, r"屏幕\s*: 2560x1440 @ 1.5x")
 
     def test_screen_config_and_auto(self):
         with tempfile.TemporaryDirectory() as tmp:
