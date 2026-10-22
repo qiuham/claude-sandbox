@@ -150,6 +150,16 @@ def _click_like_human(page, selector: str, warmup: dict) -> None:
     high = int(warmup.get("click_dwell_max_ms") or low)
     time.sleep(random.randint(low, max(low, high)) / 1000)     # noqa: S311
     mouse.click(x, y)
+    # 随机点可能落在输入框的空隙上，没拿到焦点就退回精确点击
+    try:
+        focused = page.evaluate(
+            "() => !!document.activeElement && "
+            "(document.activeElement.isContentEditable || "
+            "document.activeElement.tagName === 'TEXTAREA')")
+    except Exception:  # noqa: BLE001 - 判断不了就不管
+        return
+    if not focused:
+        page.click(selector)
 
 
 def _wait_for_text(page, needle: str, cfg: dict, timeout: float) -> bool:

@@ -110,14 +110,14 @@ DEFAULT_CONFIG = {
     },
     "warmup": {
         "prompts": WARM_PROMPTS,
-        "type_delay_ms": 140,      # 每个字的基准间隔（毫秒），真人大概这个量级
-        "type_jitter_ms": 50,
+        "type_delay_ms": 240,      # 每个字的基准间隔（毫秒），真人大概这个量级
+        "type_jitter_ms": 70,
         "think_every_chars": 18,   # 每打这么多字停一下，像在想
         "think_pause_min_ms": 250,
         "think_pause_max_ms": 700,
         "click_dwell_min_ms": 120,  # 点击前停顿
         "click_dwell_max_ms": 400,      # 上下浮动
-        "send_confirm_s": 15,
+        "send_confirm_s": 30,
         "reply_wait_s": 90,
         "poll_interval_s": 2,
         "min_growth": 120,

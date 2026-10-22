@@ -62,15 +62,15 @@ prompts = [
   "写一句适合早上发的问候语",
 ]
 # 每个字符的输入间隔（毫秒）。
-type_delay_ms = 140
-type_jitter_ms = 50
+type_delay_ms = 240
+type_jitter_ms = 70
 think_every_chars = 18
 think_pause_min_ms = 250
 think_pause_max_ms = 700
 click_dwell_min_ms = 120
 click_dwell_max_ms = 400
 # 等回复最长多少秒。
-send_confirm_s = 15
+send_confirm_s = 30
 reply_wait_s = 90
 # 第二次检查页面文字增长的间隔（秒）。
 poll_interval_s = 2
