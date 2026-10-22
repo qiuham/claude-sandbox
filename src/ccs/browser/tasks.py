@@ -527,7 +527,7 @@ def run(args, *, mode: str) -> int:
         ip = preflight(
             args.name, spec, proxy, cfg,
             die_on_change=(bool(cfg.get("strict_ip", True))
-                           and not bool(getattr(args, "allow_ip_change", False))),
+                           and not bool(getattr(args, "allow_ip", False))),
             allow_region=bool(getattr(args, "allow_region", False)))
         if ip.startswith("("):
             die("出口不通，先别继续")

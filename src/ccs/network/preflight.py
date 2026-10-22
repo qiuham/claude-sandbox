@@ -63,7 +63,7 @@ def preflight(name: str, spec: str, proxy: str, cfg: dict,  # noqa: PLR0913 - �
     known = meta.get("exit_ip")
     if known and known != ip:
         if die_on_change:
-            die(f"出口 IP 变了（上次 {known}，现在 {ip}）。\n       同一个号跨会话换 IP 是风险信号，已阻止启动。\n       确实要换：加 --allow-ip-change，或把配置里的 strict_ip 改成 false。")
+            die(f"出口 IP 变了（上次 {known}，现在 {ip}）。\n       同一个号跨会话换 IP 是风险信号，已阻止启动。\n       确实要换：加 --allow-ip，或把配置里的 strict_ip 改成 false。")
         say(f"注意    : 出口 IP 变了（上次 {known}，现在 {ip}）—— 同一个号跨会话换 IP 是风险信号")
     meta.pop("exit_node", None)          # 旧版本记过 Clash 节点名，已经不用了
     meta["exit_ip"] = ip

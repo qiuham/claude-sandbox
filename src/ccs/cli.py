@@ -22,7 +22,7 @@ def _add_create_commands(sub) -> None:
 
 
 def _add_safety_flags(p) -> None:
-    p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
+    p.add_argument("--allow-ip", action="store_true", help="出口 IP 变了也允许启动")
     p.add_argument("--allow-region", action="store_true", help="出口在 Claude 不支持的地区也允许启动")
 
 

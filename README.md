@@ -270,7 +270,7 @@ ccs web 003
 确实要换（比如换了节点）时，两种办法：
 
 ```
-ccs web 003 --allow-ip-change      # 这一次放行，并记下新 IP
+ccs web 003 --allow-ip             # 这一次放行，并记下新 IP
 ```
 
 或者把配置里的 `strict_ip` 改成 `false`，以后只提示不拦。
