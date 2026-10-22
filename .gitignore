@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+# 沙盒数据：profile（cookie/存储）、种子、元数据，都不进仓库
+profiles/
+data/
+# 本地凭据
+config.local.json
+# 早期版本把数据放在仓库里时留下的目录
+/demo/

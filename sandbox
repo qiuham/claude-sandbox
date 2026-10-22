@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""claude-sandbox —— 手工/自动两用的注册沙盒。
+
+网络
+----
+不依赖系统代理、不依赖 TUN。
+
+* 手工版（WSL）：每个出口是 46.2 上的一个 mihomo 监听端口，本机用 SSH 本地转发
+  把它拉到 127.0.0.1，浏览器只连这个本地端口。
+* 容器版（46.2 上）：设 `SANDBOX_DIRECT=1`，直接连 `172.18.0.1:<远端端口>`。
+
+浏览器
+------
+invisible_playwright（改过的 Firefox）：每个沙盒一个指纹种子、独立 profile，
+时区和语言按出口 IP 自动对齐，WebRTC 的 srflx 固定为出口 IP。
+
+命令
+----
+    sandbox new <名字> --exit cox     建沙盒（profile + 种子 + 出口）
+    sandbox open <名字>               开窗口，手工注册（结束时关窗口即可）
+    sandbox check <名字>              无头自检：出口 IP / 地区 / WebRTC
+    sandbox list                      列出沙盒
+
+出口
+----
+    cox  美国 Cox        46.2:7871
+    wave 美国 Wave       46.2:7872
+    att  美国 AT&T       46.2:7873
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+# 用仓库自带的 venv 跑：系统 python 里没有 invisible_playwright。
+# 没有 venv 也继续（doctor/list/new 不需要引擎）。
+_VENV_DIR = Path(__file__).resolve().parent / ".venv"
+_VENV_PY = _VENV_DIR / "bin" / "python3"
+# 比较 sys.prefix，不要比较 resolve() 后的解释器路径：venv 里的 python3 是指向
+# 系统解释器的软链，resolve() 之后两边一样，判断会失效。
+if _VENV_PY.is_file() and Path(sys.prefix).resolve() != _VENV_DIR.resolve():
+    os.execv(str(_VENV_PY), [str(_VENV_PY), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+SERVER = os.environ.get("SANDBOX_SSH_HOST", "64.83.46.2")
+SSH_USER = os.environ.get("SANDBOX_SSH_USER", "root")
+SSH_KEY = Path(os.path.expanduser(os.environ.get("SANDBOX_SSH_KEY", "~/.ssh/sandbox_ed25519")))
+PASSWORD_FILE = Path(os.path.expanduser(os.environ.get(
+    "SANDBOX_PASSWORD_FILE", "~/.config/claude-sandbox/ssh-password")))
+# 默认放在仓库外面：沙盒数据（cookie/种子）不该混进代码目录
+ROOT = Path(os.path.expanduser(os.environ.get("SANDBOX_ROOT", "~/sandboxes"))).resolve()
+DIRECT = os.environ.get("SANDBOX_DIRECT") == "1"   # 在 46.2 上跑时用
+
+EXITS = {
+    # 名字: (说明, 46.2 上的端口, 本机隧道端口)
+    "cox": ("美国 Cox 家宽", 7871, 7881),
+    "wave": ("美国 Wave 家宽", 7872, 7882),
+    "att": ("美国 AT&T 家宽", 7873, 7883),
+}
+NO_DIALOG_PREFS = {
+    "browser.sessionstore.resume_from_crash": False,
+    "browser.sessionstore.max_resumed_crashes": 0,
+    "browser.startup.page": 0,
+    "browser.shell.checkDefaultBrowser": False,
+    "browser.aboutwelcome.enabled": False,
+    "datareporting.policy.dataSubmissionEnabled": False,
+    "toolkit.telemetry.enabled": False,
+    "browser.tabs.warnOnClose": False,
+    "dom.disable_beforeunload": True,
+}
+
+WEBRTC_JS = """
+new Promise((res) => {
+  const out = [];
+  const pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  pc.createDataChannel('x');
+  pc.onicecandidate = (e) => {
+    if (!e.candidate) { res(out); return; }
+    const m = e.candidate.candidate.match(/([0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,}/i);
+    if (m) out.push(m[0]);
+  };
+  pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => res(out));
+  setTimeout(() => res(out), 8000);
+});
+"""
+
+
+def die(msg: str) -> None:
+    print(f"错误: {msg}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def say(msg: str = "") -> None:
+    print(msg, flush=True)
+
+
+def sandbox_dir(name: str) -> Path:
+    return ROOT / name
+
+
+def meta_file(name: str) -> Path:
+    return sandbox_dir(name) / "meta.json"
+
+
+def read_meta(name: str) -> dict:
+    f = meta_file(name)
+    if not f.is_file():
+        die(f"没有这个沙盒: {name}（先 sandbox new {name} --exit cox）")
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+def proxy_url(exit_name: str) -> str:
+    """浏览器要连的本地 SOCKS 地址；顺带把隧道拉起（容器模式不用隧道）。"""
+    if exit_name not in EXITS:
+        die(f"未知出口 {exit_name}；可选: {', '.join(EXITS)}")
+    label, remote, local = EXITS[exit_name]
+    if DIRECT:
+        return f"socks5h://172.18.0.1:{remote}"
+    ensure_tunnel(exit_name, remote, local)
+    return f"socks5h://127.0.0.1:{local}"
+
+
+def ensure_tunnel(exit_name: str, remote: int, local: int) -> None:
+    """没有隧道就拉一条；已经通就直接返回。"""
+    if port_open(local):
+        return
+    if not PASSWORD_FILE.is_file():
+        die(f"缺少 SSH 密码文件 {PASSWORD_FILE}（chmod 600，内容为 {SSH_USER}@{SERVER} 的密码）")
+    env = dict(os.environ, SSHPASS=PASSWORD_FILE.read_text(encoding="utf-8").strip())
+    cmd = [
+        "sshpass", "-e", "ssh",
+        "-o", "ExitOnForwardFailure=yes",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "ServerAliveInterval=30",
+        "-N",
+        "-L", f"127.0.0.1:{local}:172.18.0.1:{remote}",
+        f"{SSH_USER}@{SERVER}",
+    ]
+    if SSH_KEY.is_file():
+        cmd[3:3] = ["-i", str(SSH_KEY)]
+    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    for _ in range(50):
+        if port_open(local):
+            break
+        if proc.poll() is not None:
+            die(f"SSH 隧道起不来: {proc.stderr.read().decode('utf-8', 'replace').strip()}")
+        time.sleep(0.2)
+    else:
+        proc.terminate()
+        die(f"SSH 隧道 10 秒没就绪（本地端口 {local}）")
+    # 进程退出时收尾（Ctrl-C / 正常退出都覆盖）
+    import atexit
+    atexit.register(lambda: proc.poll() is None and proc.terminate())
+
+
+def port_open(port: int) -> bool:
+    import socket
+    with socket.socket() as s:
+        s.settimeout(0.3)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def curl_exit(proxy: str) -> str:
+    """用 curl 量出口 IP：urllib 不支持 SOCKS，curl 支持 socks5h。"""
+    try:
+        out = subprocess.run(
+            ["curl", "-s", "--max-time", "15", "-x", proxy.replace("socks5h://", "socks5h://"),
+             "https://api.ipify.org"],
+            capture_output=True, text=True, timeout=25,
+        )
+        return out.stdout.strip() or f"(失败: {out.stderr.strip()[:80]})"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"(失败: {exc})"
+
+
+def preflight(name: str, exit_name: str, proxy: str) -> str:
+    label = EXITS.get(exit_name, ("?",))[0]
+    ip = curl_exit(proxy)
+    say(f"出口    : {exit_name}（{label}）")
+    say(f"出口 IP : {ip}")
+    if not ip.startswith("("):
+        meta = read_meta(name)
+        known = meta.get("exit_ip")
+        if known and known != ip:
+            say(f"注意    : 出口 IP 变了（上次 {known}，现在 {ip}）—— 同一个号跨会话换 IP 是风险信号")
+        elif not known:
+            meta["exit_ip"] = ip
+            meta_file(name).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
+                                       encoding="utf-8")
+    return ip
+
+
+def seed_of(profile: Path) -> int:
+    f = profile / "seed.json"
+    if f.is_file():
+        try:
+            seed = json.loads(f.read_text(encoding="utf-8")).get("seed")
+            if isinstance(seed, int):
+                return seed
+        except (OSError, json.JSONDecodeError):
+            pass
+    import random
+    seed = random.SystemRandom().randrange(1, 2**31)
+    f.write_text(json.dumps({"seed": seed}), encoding="utf-8")
+    say(f"指纹种子: {seed}（写入 {f.name}，这个沙盒以后一直用它）")
+    return seed
+
+
+def launch(name: str, proxy: str, headless: bool, timeout: int = 0) -> int:
+    try:
+        from invisible_playwright import InvisiblePlaywright
+    except ImportError:
+        die("没装 invisible_playwright：在本仓库目录执行 .venv/bin/pip install -r requirements.txt")
+
+    profile = sandbox_dir(name) / "profile"
+    profile.mkdir(parents=True, exist_ok=True)
+    kw = dict(
+        seed=seed_of(profile),
+        headless=headless,
+        humanize=True,
+        locale="auto",              # 按出口 IP 的地区选语言
+        profile_dir=str(profile),
+        extra_prefs=dict(NO_DIALOG_PREFS),
+        proxy={"server": proxy.replace("socks5h://", "socks5://")},
+    )
+    with InvisiblePlaywright(**kw) as browser:
+        ctx = browser.contexts[0] if hasattr(browser, "contexts") and browser.contexts else browser
+        page = ctx.new_page()
+        page.set_default_timeout(45000)
+        trace = page.goto("https://api.ipify.org", timeout=90000)
+        say(f"页面加载完成（HTTP {trace.status if trace else '?'}）")
+        if headless:
+            say(f"页面出口 IP : {page.inner_text('body').strip()}")
+            try:
+                page.goto("https://www.cloudflare.com/", timeout=60000)
+                say(f"WebRTC 候选 : {json.dumps(page.evaluate(WEBRTC_JS))}")
+            except Exception as exc:      # noqa: BLE001 - 自检失败不该中断
+                say(f"WebRTC 检测失败: {exc}")
+            return 0
+        # 手工模式：停在这里等用户用完；关掉窗口后退出
+        page.goto("https://claude.ai/", timeout=90000)
+        say("")
+        say("浏览器已打开。手工注册/养号完成后，直接关掉浏览器窗口即可退出。")
+        deadline = time.time() + timeout if timeout else 0
+        while True:
+            if deadline and time.time() > deadline:
+                say("到达 --timeout，关闭浏览器")
+                return 0
+            try:
+                page.wait_for_timeout(1000)
+            except Exception:             # noqa: BLE001 - 用户关窗口
+                say("窗口已关闭，沙盒数据已保留")
+                return 0
+
+
+def cmd_new(args) -> int:
+    if args.name in {".", ".."} or "/" in args.name or "\\" in args.name:
+        die("沙盒名字不能带路径分隔符")
+    if args.exit not in EXITS:
+        die(f"未知出口 {args.exit}；可选: {', '.join(EXITS)}")
+    d = sandbox_dir(args.name)
+    if d.exists():
+        die(f"{d} 已存在")
+    d.mkdir(parents=True)
+    meta = {"name": args.name, "exit": args.exit, "created_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    meta_file(args.name).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n",
+                                    encoding="utf-8")
+    profile = d / "profile"
+    profile.mkdir()
+    seed_of(profile)
+    say(f"已建沙盒 {args.name}（出口 {args.exit}，目录 {d}）")
+    say(f"下一步: sandbox open {args.name}")
+    return 0
+
+
+def cmd_open(args) -> int:
+    meta = read_meta(args.name)
+    exit_name = args.exit or meta["exit"]
+    proxy = proxy_url(exit_name)
+    ip = preflight(args.name, exit_name, proxy)
+    if ip.startswith("("):
+        die("出口不通，先别注册")
+    return launch(args.name, proxy, headless=False, timeout=args.timeout)
+
+
+def cmd_check(args) -> int:
+    meta = read_meta(args.name)
+    exit_name = args.exit or meta["exit"]
+    proxy = proxy_url(exit_name)
+    ip = preflight(args.name, exit_name, proxy)
+    if ip.startswith("("):
+        die("出口不通")
+    return launch(args.name, proxy, headless=True)
+
+
+def cmd_list(args) -> int:
+    if not ROOT.is_dir():
+        say("还没有沙盒")
+        return 0
+    say(f"{'名字':<16} {'出口':<6} {'创建时间':<20}")
+    for d in sorted(ROOT.iterdir()):
+        if not (d / "meta.json").is_file():
+            continue
+        m = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+        say(f"{m.get('name', d.name):<16} {m.get('exit', '-'):<6} {m.get('created_at', '-'):<20}")
+    return 0
+
+
+def cmd_doctor(args) -> int:
+    ok = True
+    say(f"目录      : {ROOT}")
+    say(f"引擎      : {'有' if (Path(__file__).parent / '.venv').is_dir() else '没有 .venv'}")
+    if not DIRECT:
+        say(f"SSH 目标  : {SSH_USER}@{SERVER}")
+        say(f"密钥      : {SSH_KEY} {'有' if SSH_KEY.is_file() else '无'}")
+        say(f"密码文件  : {PASSWORD_FILE} {'有' if PASSWORD_FILE.is_file() else '缺'}")
+        ok = PASSWORD_FILE.is_file()
+    for name, (label, remote, local) in EXITS.items():
+        say(f"出口 {name:<5}: {label}（46.2:{remote} → 本机:{local}）")
+    return 0 if ok else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="sandbox", description="Claude 注册沙盒（手工/自动两用）")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("new", help="建沙盒")
+    p.add_argument("name")
+    p.add_argument("--exit", required=True, choices=sorted(EXITS))
+    p.set_defaults(func=cmd_new)
+
+    p = sub.add_parser("open", help="开窗口，手工注册")
+    p.add_argument("name")
+    p.add_argument("--exit", choices=sorted(EXITS))
+    p.add_argument("--timeout", type=int, default=0, help="多少秒后自动关闭（0 = 一直开着）")
+    p.set_defaults(func=cmd_open)
+
+    p = sub.add_parser("check", help="无头自检：出口 IP / WebRTC")
+    p.add_argument("name")
+    p.add_argument("--exit", choices=sorted(EXITS))
+    p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("list", help="列出沙盒")
+    p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("doctor", help="检查依赖和出口配置")
+    p.set_defaults(func=cmd_doctor)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

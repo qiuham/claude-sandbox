@@ -1,0 +1,20 @@
+# 在 46.2 上跑：
+#   docker compose up -d --build
+# 然后在 Windows/WSL 里开 SSH 隧道：
+#   ssh -L 6080:127.0.0.1:6080 root@64.83.46.2
+# 浏览器打开 http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
+services:
+  sandbox:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: claude-sandbox:latest
+    environment:
+      SANDBOX_PROFILE: ${SANDBOX_PROFILE:-demo}
+      SANDBOX_EXIT: ${SANDBOX_EXIT:-cox}
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:6080:6080"    # 只绑本机，外部经 SSH 隧道访问
+    shm_size: 512m
+    restart: unless-stopped
