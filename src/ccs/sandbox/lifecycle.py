@@ -270,7 +270,8 @@ def cmd_doctor(_args) -> int:
     elif str(cfg.get("exit") or "auto") == "direct":
         say(f"UDP 出口  : {udp_ip}（direct：不经代理）")
     else:
-        say(f"UDP 出口  : {udp_ip}（不经代理；WebRTC 已关闭，不会泄露）")
+        say(f"UDP 出口  : {udp_ip}（不经代理）")
+        say("         有 SOCKS5 出口时 WebRTC 走代理；direct 时才强制关闭")
     lack = deps.missing()
     say("系统库    : " + ("齐" if not lack else f"缺 {len(lack)} 个 · {' '.join(lack)}"))
     if lack:

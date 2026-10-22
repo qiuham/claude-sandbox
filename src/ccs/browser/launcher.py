@@ -145,6 +145,21 @@ def close_session(bctx, profile: Path, cfg: dict) -> None:
         process.clear_lock_files(profile)
 
 
+def session_prefs(cfg: dict, proxy: str) -> dict:
+    """按出口决定 WebRTC 怎么办。
+
+    有 SOCKS5 代理时，Firefox 会把 STUN 的 UDP 也交给代理，
+    ICE 拿到的就是出口 IP —— 和真实用户一样，不用干预。
+    没有代理（或只有 HTTP 代理，UDP 过不去）时，STUN 会拿到真实公网 IP，
+    这时只允许代理候选：候选为空，ipleak 上看不到任何 IP。
+    """
+    prefs = dict(cfg["browser"]["prefs"])
+    if not proxy or proxy.startswith(("http://", "https://")):
+        prefs["media.peerconnection.ice.proxy_only"] = True
+        prefs["media.peerconnection.ice.no_host"] = True
+    return prefs
+
+
 def _context_kwargs(profile: Path, *, headless: bool, proxy: str,
                     pin: dict | None, cfg: dict) -> dict:
     kw = {
@@ -153,7 +168,7 @@ def _context_kwargs(profile: Path, *, headless: bool, proxy: str,
         "humanize": float(cfg.get("humanize_s") or 1.5),
         "locale": "auto",              # 按出口 IP 的地区选语言
         "profile_dir": str(profile),
-        "extra_prefs": cfg["browser"]["prefs"],
+        "extra_prefs": session_prefs(cfg, proxy),
     }
     if proxy:
         kw["proxy"] = {"server": proxy.replace("socks5h://", "socks5://")}

@@ -52,11 +52,6 @@ SANDBOX_PREFS = {
     "network.http.http3.enabled": False,
     "network.http.altsvc.enabled": False,
     "network.http.altsvc.oe": False,
-    # WebRTC 的 STUN 走 UDP，SOCKS 只代理 TCP —— 默认会拿真实公网 IP 去问 STUN。
-    # 只允许代理候选：候选列表为空，ipleak 的 WebRTC 一栏看不到任何 IP。
-    "media.peerconnection.ice.proxy_only": True,
-    # 双保险：连本机地址候选也不要（默认已经用 mDNS 名字）
-    "media.peerconnection.ice.no_host": True,
 }
 
 NO_DIALOG_PREFS = {

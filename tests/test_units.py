@@ -16,6 +16,7 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
 from ccs import config, paths, report  # noqa: E402
+from ccs.browser.launcher import session_prefs  # noqa: E402
 from ccs.browser.tasks import (  # noqa: E402
     _parse_csv,
     _parse_prompt_file,
@@ -397,6 +398,20 @@ class DiscoverTests(unittest.TestCase):
     def test_exit_auto_falls_back_to_direct(self):
         with mock.patch.object(discover, "find_local_proxy", return_value=""):
             self.assertEqual(resolve_exit("", {"exit": "auto"}), ("direct", ""))
+
+
+class SessionPrefsTests(unittest.TestCase):
+    """WebRTC 按出口决定：SOCKS 放行（走代理），direct / HTTP 代理才关。"""
+
+    def test_socks_keeps_webrtc_native(self):
+        prefs = session_prefs(config.DEFAULT_CONFIG, "socks5h://127.0.0.1:7897")
+        self.assertNotIn("media.peerconnection.ice.proxy_only", prefs)
+
+    def test_direct_and_http_proxy_block(self):
+        for proxy in ("", "http://127.0.0.1:7890"):
+            prefs = session_prefs(config.DEFAULT_CONFIG, proxy)
+            self.assertTrue(prefs["media.peerconnection.ice.proxy_only"], proxy)
+            self.assertTrue(prefs["media.peerconnection.ice.no_host"], proxy)
 
 
 class StunTests(unittest.TestCase):
