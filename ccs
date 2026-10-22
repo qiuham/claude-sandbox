@@ -55,6 +55,26 @@ ROOT = Path(os.path.expanduser(os.environ.get("SANDBOX_ROOT", "~/sandboxes"))).r
 
 DEFAULT_CONFIG = {}   # 没配置 = direct；配了 exit 就走它
 
+# 沙盒的浏览器偏好：目标只有一个 —— **DNS 不经过本机、也不经过 Clash 的解析器**。
+# 做法：DoH only（mode=3），DoH 请求本身走同一条代理，所以解析发生在出口侧。
+# 任何一条解析路径都不碰系统 DNS，装修机/换环境都不用改。
+SANDBOX_PREFS = {
+    # SOCKS 把域名交给代理解析（显式写上，不依赖默认值）
+    "network.proxy.socks_remote_dns": True,
+    # DoH only：不做系统 DNS 回退，避免"DoH 失败就漏给人"
+    "network.trr.mode": 3,
+    "network.trr.uri": "https://cloudflare-dns.com/dns-query",
+    "network.trr.custom_uri": "https://cloudflare-dns.com/dns-query",
+    "network.trr.bootstrapAddress": "1.1.1.1",
+    # 关掉所有"提前解析"的通道
+    "network.dns.disablePrefetch": True,
+    "network.prefetch-next": False,
+    "network.predictor.enabled": False,
+    "network.http.speculative-parallel-limit": 0,
+    # IPv6 也会绕过代理做 DNS
+    "network.dns.disableIPv6": True,
+}
+
 NO_DIALOG_PREFS = {
     "browser.sessionstore.resume_from_crash": False,
     "browser.sessionstore.max_resumed_crashes": 0,
@@ -206,7 +226,7 @@ def launch(name: str, proxy: str, headless: bool, timeout: int = 0) -> int:
         humanize=True,
         locale="auto",              # 按出口 IP 的地区选语言
         profile_dir=str(profile),
-        extra_prefs=dict(NO_DIALOG_PREFS),
+        extra_prefs={**NO_DIALOG_PREFS, **SANDBOX_PREFS},
     )
     if proxy:
         kw["proxy"] = {"server": proxy.replace("socks5h://", "socks5://")}

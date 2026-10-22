@@ -78,6 +78,31 @@ Windows 任务栏会出现一个浏览器窗口（WSLg）。用完直接关窗�
 ccs check profile1
 ```
 
+## DNS：沙盒内保证干净
+
+浏览器的 DNS 不走本机，也不走 Clash 的解析器：
+
+```
+浏览器查域名
+  → DoH（HTTPS 请求，走同一条代理）
+  → 出口节点
+  → Cloudflare 解析
+```
+
+对应 Firefox 偏好（启动时写入 profile，可用 `profile/prefs.js` 核对）：
+
+| 偏好 | 值 | 作用 |
+|---|---|---|
+| `network.trr.mode` | `3` | 只用 DoH，不做系统 DNS 回退 |
+| `network.trr.uri` | `https://cloudflare-dns.com/dns-query` | 解析器本身也走代理 |
+| `network.proxy.socks_remote_dns` | `true` | SOCKS 把域名交给代理 |
+| `network.dns.disablePrefetch` | `true` | 关掉提前解析 |
+| `network.dns.disableIPv6` | `true` | IPv6 DNS 也会绕过代理 |
+
+代价：**代理不通时页面直接解析失败**（不会再退回系统 DNS）。这是为了"不泄露"做的取舍。
+
+验证：在沙盒窗口里打开 `ipleak.net`，DNS 那一栏应该只有 Cloudflare 的解析器，没有本机 ISP。
+
 ## 本机 Clash 的注意点
 
 本机 Clash 在**规则模式**下按域名分流。如果 Claude 的规则被指到别的节点（例如指到你自己的
