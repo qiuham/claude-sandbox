@@ -183,6 +183,34 @@ fonts = "western"
 ⚠️ 抓取必须在浏览器里做。用 curl 带 cookie 请求会被 Cloudflare 拦掉，
 返回 `Just a moment...`。
 
+## 导出 / 导入身份
+
+想把一个沙盒的指纹和登录态交给另一台机器：
+
+```
+ccs export 003 -o 003.bundle.tar.gz    # 约 10 KB
+ccs import 003.bundle.tar.gz 003       # 对方机器上执行
+ccs web 003
+```
+
+包里只有三样：
+
+| 文件 | 内容 |
+|---|---|
+| `bundle.json` | 版本、出口、指纹 pin、账号摘要 |
+| `seed.json` | 指纹种子 |
+| `cookies.sqlite` | 只保留 claude.ai 的 cookie（含 `sessionKey`、`anthropic-device-id`） |
+
+不带 profile 的其它内容（缓存、历史、storage），所以只有 10 KB 左右。
+
+对方导入后：
+
+- 指纹一致（种子 + pin 都带过去了）；
+- 登录态一致（cookie 带过去了），打开就是登录状态；
+- 出口由 `bundle.json` 记录，和原沙盒相同。
+
+⚠️ 包里含 `sessionKey`，等于把这个号的登录权一起给出去了。共享后避免两端同时在线。
+
 ## 出口 IP 变了会怎样
 
 严格模式默认开启。同一个沙盒第一次启动会记下出口 IP，以后每次启动都比对：
@@ -201,6 +229,36 @@ ccs web 003 --allow-ip-change      # 这一次放行，并记下新 IP
 ```
 
 或者把配置里的 `strict_ip` 改成 `false`，以后只提示不拦。
+
+## 养号话术
+
+默认从目录读，一个文件一句：
+
+```
+~/.config/claude-sandbox/prompts/
+├── 01-greeting.md
+├── 02-rewrite.md
+└── 03-explain-cloud.md
+```
+
+```markdown
+---
+name: greeting
+description: 早上的问候
+---
+你好，帮我写一句早上的问候语
+```
+
+`---` 头部是元数据，只用来描述；正文才是发出去的内容。按文件名排序，每次随机挑一句。
+
+| 方式 | 配置 | 适合 |
+|---|---|---|
+| 目录（推荐） | `prompts_dir` | 增删改都只是加一个文件 |
+| 单文件 | `prompts_file` | 一行一句、`---` 分段，或 `.csv`（第一列） |
+| 数组 | `prompts` | 三五条短句 |
+| 一次指定 | `ccs warmup 003 --prompt "…"` | 临时用 |
+
+优先级：`--prompt` > `prompts_dir` > `prompts_file` > `prompts` > 内置默认。
 
 ## 本机 Clash 的注意点
 

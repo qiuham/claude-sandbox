@@ -5,17 +5,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 
 def ls_lines(rows: list[dict]) -> list[str]:
     """ls 的表头和每行；字段顺序固定。"""
-    lines = [f"{'名字':<8} {'出口 IP':<16} {'账号':<28} {'档位':<7} {'注册':<11} 组织"]
+    lines = [f"{'profile':<8} {'出口 IP':<16} {'账号':<28} {'档位':<7} {'对话':<4} {'注册':<16} 组织"]
     for row in rows:
         acct = row.get("account") or {}
         email = acct.get("email") or "-"
-        created = (acct.get("account_created_at") or "-")[:10]
+        created = format_created(acct.get("account_created_at") or "")
         org = acct.get("org_id") or "-"
         lines.append(f"{row.get('name', '-'):<8} {row.get('exit_ip', '-'):<16} {email:<28} "
-                     f"{plan_label(acct):<7} {created:<11} {org}")
+                     f"{plan_label(acct):<7} {warmup_count(acct)!s:<4} {created:<16} {org}")
     return lines
 
 
@@ -65,9 +67,29 @@ def plan_style(label: str) -> str:
     return "dim"
 
 
+def warmup_count(account: dict) -> int:
+    """养号次数。老数据没有计数但有最近一次时间，按 1 次算。"""
+    if account.get("warmup_count"):
+        return int(account["warmup_count"])
+    return 1 if account.get("last_warmup_at") else 0
+
+
+def format_created(value: str) -> str:
+    """接口给的是 UTC ISO，显示成本地时区、精确到分钟。"""
+    if not value:
+        return "-"
+    text = str(value).strip()
+    try:
+        # Python 3.11+ 的 fromisoformat 直接认 Z 结尾
+        moment = datetime.fromisoformat(text)
+        return moment.astimezone().strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return text[:16]
+
+
 def ls_rows(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
     """ls 的表头和单元格，给 ui.emit_table 用。"""
-    headers = ["名字", "出口 IP", "账号", "档位", "注册", "组织"]
+    headers = ["profile", "出口 IP", "账号", "档位", "对话", "注册", "组织"]
     cells = []
     for row in rows:
         acct = row.get("account") or {}
@@ -76,7 +98,8 @@ def ls_rows(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
             str(row.get("exit_ip", "-")),
             str(acct.get("email") or "-"),
             plan_label(acct),
-            (acct.get("account_created_at") or "-")[:10],
+            str(warmup_count(acct)),
+            format_created(acct.get("account_created_at") or ""),
             str(acct.get("org_id") or "-"),
         ])
     return headers, cells
@@ -89,7 +112,8 @@ def ls_styles(cells: list[list[str]]) -> list[list[str]]:
         "" if cell[1] != "-" else "dim",
         "" if cell[2] != "-" else "dim",
         plan_style(cell[3]),
-        "dim" if cell[4] == "-" else "",
+        "dim" if cell[4] in ("0", "-") else "",
+        "dim" if cell[5] == "-" else "",
         "dim",
     ] for cell in cells]
 
@@ -121,7 +145,15 @@ def account_pairs(account: dict) -> list[tuple[str, str]]:
         pairs.append(("计费", str(account["billing_type"])))
     pairs.append(("组织", str(account.get("org_id") or "-")))
     if account.get("account_created_at"):
-        pairs.append(("注册", str(account["account_created_at"])[:10]))
+        pairs.append(("注册", format_created(str(account["account_created_at"]))))
+    if warmup_count(account):
+        last = str(account.get("last_warmup_at") or "")
+        pairs.append(("对话", f"{warmup_count(account)} 次" + (f" · 最近 {last}" if last else "")))
+    state = str(account.get("alive_state") or "")
+    if state:
+        label = {"ok": "正常", "invalid": "会话失效", "restricted": "账号受限"}.get(state, state)
+        checked = str(account.get("alive_checked_at") or "")
+        pairs.append(("状态", f"{label} · {checked}" if checked else label))
     return pairs
 
 

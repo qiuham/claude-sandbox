@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import random
 import shutil
 import time
 from contextlib import suppress
+from pathlib import Path
 
 from ccs import config, errors, paths
 from ccs.browser import launcher, prefs, process
@@ -86,7 +89,8 @@ def harvest_account(page, name: str) -> dict | None:
         "session_key": cookies.get("sessionKey", ""),
         "captured_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
-    if not store.write_account(name, info):
+    merged = {**store.read_account(name), **info}   # 保留养号统计、存活记录等字段
+    if not store.write_account(name, merged):
         log_line("写 account.json 失败")
         return None
     return info
@@ -103,36 +107,74 @@ def _find_input(page, cfg: dict) -> str:
     return ""
 
 
-def do_warmup(page, prompt: str, cfg: dict) -> bool:
-    """在已登录的页面里发一句话，等到有回复。"""
+def _type_like_human(page, text: str, warmup: dict) -> None:
+    """逐字输入，每个字的间隔带随机抖动。
+
+    Playwright 的 delay 是固定值，一眼机器；这里按配置的基准值上下浮动，
+    标点后面再停久一点，接近真人打字的节奏。
+    """
+    base = int(warmup["type_delay_ms"])
+    jitter = int(warmup.get("type_jitter_ms") or 0)
+    for char in text:
+        page.keyboard.type(char)
+        pause = base + random.randint(-jitter, jitter)  # noqa: S311 - 打字节奏抖动，不是安全用途
+        if char in "，。！？,.!?":
+            pause += base
+        time.sleep(max(0, pause) / 1000)
+
+
+def _wait_for_text(page, needle: str, cfg: dict, timeout: float) -> bool:
+    """等页面上出现某段文字（用来确认消息真的发出去了）。"""
     warmup = cfg["warmup"]
-    selector = _find_input(page, cfg)
-    if not selector:
-        log_line("养号失败：找不到输入框")
-        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(warmup["poll_interval_s"])
+        try:
+            if needle in page.inner_text("body"):
+                return True
+        except Exception:  # noqa: BLE001 - 页面被关掉就当没等到
+            return False
+    return False
 
-    try:
-        before = len(page.inner_text("body"))
-    except Exception:  # noqa: BLE001 - 页面读不到就按 0 算，继续尝试养号
-        before = 0
 
-    try:
-        page.click(selector)
-        page.keyboard.type(prompt, delay=warmup["type_delay_ms"])
-        page.keyboard.press("Enter")
-    except Exception as exc:  # noqa: BLE001 - 点击/输入失败只算这次养号失败
-        log_line(f"养号失败：{type(exc).__name__}: {exc}")
-        return False
-
+def _wait_for_growth(page, base: int, cfg: dict) -> bool:
+    """等页面文本继续增长（用来确认模型回复了）。"""
+    warmup = cfg["warmup"]
     deadline = time.time() + warmup["reply_wait_s"]
     while time.time() < deadline:
         time.sleep(warmup["poll_interval_s"])
         try:
-            if len(page.inner_text("body")) > before + warmup["min_growth"]:
+            if len(page.inner_text("body")) > base + warmup["min_growth"]:
                 return True
-        except Exception:  # noqa: BLE001 - 页面被关掉，养号直接算失败
+        except Exception:  # noqa: BLE001 - 页面被关掉就当没等到
             return False
     return False
+
+
+def do_warmup(page, prompt: str, cfg: dict) -> str:
+    """发一句话并等回复。返回 ok / no_input / not_sent / no_reply 四种结果。"""
+    warmup = cfg["warmup"]
+    selector = _find_input(page, cfg)
+    if not selector:
+        return "no_input"
+
+    try:
+        page.click(selector)          # 指针走引擎的人化轨迹（种子决定，带曲线和加减速）
+        _type_like_human(page, prompt, warmup)
+        page.keyboard.press("Enter")
+    except Exception as exc:  # noqa: BLE001 - 点击/输入失败只算这次养号失败
+        log_line(f"养号失败：{type(exc).__name__}: {exc}")
+        return "not_sent"
+
+    # 第一关：消息必须出现在页面上，否则只是键盘输入没生效
+    if not _wait_for_text(page, prompt, cfg, warmup["send_confirm_s"]):
+        return "not_sent"
+
+    try:
+        before = len(page.inner_text("body"))
+    except Exception:  # noqa: BLE001 - 读不到就按 0 算
+        before = 0
+    return "ok" if _wait_for_growth(page, before, cfg) else "no_reply"
 
 
 def _headless_check(page, cfg: dict) -> int:
@@ -150,14 +192,179 @@ def _say_account(page, name: str) -> None:
         say(f"账号    : {store.read_account(name).get('email') or '已记录'}")
 
 
+def _pick_prompt(name: str, prompts: list[str], cfg: dict) -> str:
+    """挑一句：daily 按日期轮换，random 随机但不连着用同一句。"""
+    if not prompts:
+        return ""
+    mode = str(cfg["warmup"].get("pick") or "random").lower()
+    last = str(store.read_account(name).get("last_warmup_prompt") or "")
+
+    if mode == "daily":
+        index = time.localtime().tm_yday % len(prompts)
+        candidate = prompts[index]
+        if candidate == last and len(prompts) > 1:
+            candidate = prompts[(index + 1) % len(prompts)]
+        return candidate
+
+    candidates = [p for p in prompts if p != last] or prompts
+    return random.choice(candidates)  # noqa: S311 - 只挑提示词，不用于安全用途
+
+
+def _remember_prompt(name: str, prompt: str) -> None:
+    """记下这次用了哪句，避免下次重复。"""
+    account = store.read_account(name)
+    if not account:
+        return
+    account["last_warmup_prompt"] = prompt
+    account["last_warmup_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    account["warmup_count"] = int(account.get("warmup_count") or 0) + 1
+    store.write_account(name, account)
+
+
+REFRESH_TEXT = {
+    "ok": "会话正常，账号信息已刷新",
+    "invalid": "会话已失效（要重新登录）",
+    "restricted": "账号受限（落在 /restricted）",
+}
+
+
+def refresh_flow(page, name: str) -> int:
+    """探测会话是否还活着；活着就顺手把账号信息刷新一遍。"""
+    url = str(getattr(page, "url", "") or "")
+    if "/restricted" in url:
+        state = "restricted"
+    elif "/login" in url or "/signin" in url:
+        state = "invalid"
+    else:
+        state = "ok"
+
+    if state == "ok":
+        harvest_account(page, name)
+
+    account = store.read_account(name)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    account["alive_state"] = state
+    account["alive_checked_at"] = now
+    if state == "ok" and not account.get("alive_first_ok_at"):
+        account["alive_first_ok_at"] = now
+    if state != "ok" and not account.get("alive_first_invalid_at"):
+        account["alive_first_invalid_at"] = now
+    store.write_account(name, account)
+
+    say(f"状态    : {REFRESH_TEXT[state]}")
+    say(f"检测时间: {now}")
+    if account.get("alive_first_ok_at"):
+        say(f"首次正常: {account['alive_first_ok_at']}")
+    if account.get("alive_first_invalid_at"):
+        say(f"首次失效: {account['alive_first_invalid_at']}")
+    log_line(f"刷新结果: {state} · {account.get('email', '')}")
+    return 0 if state == "ok" else 1
+
+
+WARMUP_TEXT = {
+    "ok": "已收到回复",
+    "no_input": "找不到输入框（可能没登录）",
+    "not_sent": "消息没发出去（可能没登录）",
+    "no_reply": "发了但没等到回复（看 ccs.log）",
+}
+
+
+def _parse_csv(text: str) -> list[str]:
+    """CSV：取第一列；首行是表头（prompt/text/内容）时跳过。
+
+    用标准库 csv 解析，所以带引号的英文逗号、嵌入换行都能处理。
+    """
+    rows = [row for row in csv.reader(io.StringIO(text)) if row and row[0].strip()]
+    if not rows:
+        return []
+    first = rows[0][0].strip().lower()
+    if first in ("prompt", "text", "content", "内容", "提示词"):
+        rows = rows[1:]
+    return [row[0].strip() for row in rows if row[0].strip()]
+
+
+def _parse_prompt_file(text: str) -> list[str]:
+    """解析话术文件。
+
+    - 有单独一行 `---`：按这个分隔成多段，段内可以多行（适合较长的提示词）
+    - 没有分隔线：一行一句
+    - `#` 开头的行和空行忽略
+    """
+    lines = text.splitlines()
+    if any(line.strip() == "---" for line in lines):
+        blocks, current = [], []
+        for line in lines:
+            if line.strip() == "---":
+                block = "\n".join(current).strip()
+                if block:
+                    blocks.append(block)
+                current = []
+            elif not line.strip().startswith("#"):
+                current.append(line)
+        block = "\n".join(current).strip()
+        if block:
+            blocks.append(block)
+        return blocks
+
+    return [line.strip() for line in lines
+            if line.strip() and not line.strip().startswith("#")]
+
+
+def _strip_frontmatter(text: str) -> str:
+    """去掉文件开头的 YAML frontmatter（--- 包起来那段）。"""
+    stripped = text.lstrip()
+    if not stripped.startswith("---"):
+        return text
+    rest = stripped[3:]
+    end = rest.find("\n---")
+    if end < 0:
+        return text
+    return rest[end + 4:].lstrip("\n")
+
+
+def _read_prompt_dir(folder: Path) -> list[str]:
+    """一个目录，一个文件一句提示词；按文件名排序。"""
+    prompts = []
+    for file in sorted(list(folder.glob("*.md")) + list(folder.glob("*.txt"))):
+        try:
+            body = _strip_frontmatter(file.read_text(encoding="utf-8")).strip()
+        except OSError:
+            continue
+        if body:
+            prompts.append(body)
+    return prompts
+
+
+def _prompts(cfg: dict) -> list[str]:
+    """话术来源：先看 prompts_file（一行一句），没有就用配置里的列表。"""
+    path = str(cfg["warmup"].get("prompts_file") or "").strip()
+    if path:
+        file = Path(path).expanduser()
+        if file.is_file():
+            raw = file.read_text(encoding="utf-8")
+            blocks = _parse_csv(raw) if file.suffix.lower() == ".csv" else _parse_prompt_file(raw)
+            if blocks:
+                return blocks
+    folder = str(cfg["warmup"].get("prompts_dir") or "").strip()
+    if folder:
+        directory = Path(folder).expanduser()
+        if directory.is_dir():
+            blocks = _read_prompt_dir(directory)
+            if blocks:
+                return blocks
+    return cfg["warmup"]["prompts"] or config.WARM_PROMPTS
+
+
 def warmup_flow(page, name: str, prompt: str | None, cfg: dict) -> int:
-    prompts = cfg["warmup"]["prompts"] or config.WARM_PROMPTS
-    prompt = prompt or random.choice(prompts)  # noqa: S311 - 只随机挑一句提示词，不用于安全用途
+    prompts = _prompts(cfg)
+    prompt = (prompt or _pick_prompt(name, prompts, cfg)).strip()
     say(f"养号    : 发送「{prompt}」")
-    ok = do_warmup(page, prompt, cfg)
-    say("养号    : 已收到回复" if ok else "养号    : 没等到回复（看 ccs.log）")
-    log_line(f"养号结果: {'ok' if ok else 'timeout'} · {prompt}")
+    result = do_warmup(page, prompt, cfg)
+    say(f"养号    : {WARMUP_TEXT.get(result, result)}")
+    log_line(f"养号结果: {result} · {prompt}")
     harvest_account(page, name)
+    if result == "ok":
+        _remember_prompt(name, prompt)
     return 0
 
 
@@ -189,22 +396,25 @@ def wait_loop(session, name: str, timeout: int, cfg: dict) -> int:
         time.sleep(t["run_sleep_s"])
 
 
-def _run_browser(args, proxy: str, cfg: dict, *, headless: bool, warmup: bool) -> int:
+def _run_browser(args, proxy: str, cfg: dict, *, mode: str) -> int:
     name = args.name
     session = launcher.open_session(
         name, proxy, cfg,
-        headless=headless,
-        pin=prefs.build_pin(cfg),
+        headless=(mode == "check"),
+        pin=prefs.build_pin(cfg, store.read_meta(name).get("pin"),
+                            store.read_meta(name).get("fonts")),
     )
     try:
         trace = session.page.goto("https://api.ipify.org",
                                   timeout=_timeouts(cfg)["goto_ms"])
         say(f"页面加载完成（HTTP {trace.status if trace else '?'}）")
-        if headless:
+        if mode == "check":
             return _headless_check(session.page, cfg)
         launcher.open_claude(session.page, cfg)
+        if mode == "refresh":
+            return refresh_flow(session.page, name)
         _say_account(session.page, name)
-        if warmup:
+        if mode == "warmup":
             prompt = str(getattr(args, "prompt", "") or "")
             return warmup_flow(session.page, name, prompt, cfg)
         return wait_loop(session, name, getattr(args, "timeout", 0), cfg)
@@ -212,11 +422,11 @@ def _run_browser(args, proxy: str, cfg: dict, *, headless: bool, warmup: bool) -
         launcher.close_session(session.context, session.profile, cfg)
 
 
-def run(args, *, headless: bool, warmup: bool = False) -> int:
+def run(args, *, mode: str) -> int:
     cfg = load_runtime()
     meta = store.read_meta(args.name)
     errors.set_log_path(paths.log_file(args.name))
-    log_line(f"=== {'check' if headless else 'start'} {args.name} ===")
+    log_line(f"=== {mode} {args.name} ===")
     spec, proxy = resolve_exit(pick_exit(args, meta), cfg)   # proxy 为空 = direct
     relay = None
     try:
@@ -238,9 +448,9 @@ def run(args, *, headless: bool, warmup: bool = False) -> int:
                            and not bool(getattr(args, "allow_ip_change", False))))
         if ip.startswith("("):
             die("出口不通，先别继续")
-        if headless and not _has_xvfb():
+        if mode == "check" and not _has_xvfb():
             die("headless 需要 Xvfb：sudo apt install -y xvfb")
-        return _run_browser(args, proxy, cfg, headless=headless, warmup=warmup)
+        return _run_browser(args, proxy, cfg, mode=mode)
     finally:
         if relay:
             relay.stop()
@@ -250,13 +460,17 @@ def _has_xvfb() -> bool:
     return shutil.which("Xvfb") is not None
 
 
+def cmd_refresh(args) -> int:
+    return run(args, mode="refresh")
+
+
 def cmd_web(args) -> int:
-    return run(args, headless=False)
+    return run(args, mode="web")
 
 
 def cmd_check(args) -> int:
-    return run(args, headless=True)
+    return run(args, mode="check")
 
 
 def cmd_warmup(args) -> int:
-    return run(args, headless=getattr(args, "headless", False), warmup=True)
+    return run(args, mode="check" if getattr(args, "headless", False) else "warmup")

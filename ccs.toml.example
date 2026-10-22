@@ -47,6 +47,13 @@ connect_timeout_s = 15
 client_timeout_s = 30
 
 [warmup]
+# 挑话术：random = 每次挑一句，不与上次重复；daily = 按日期轮换
+pick = "random"
+# 话术文件（可选）：一行一句，单独一行 --- 可以分多行段落。
+# 只有提示词很多（几十条以上）时才建议用文件；少量直接写在 prompts 里。
+prompts_file = ""
+# 目录方式：一个 .md/.txt 文件就是一句提示词，按文件名排序；优先于 prompts_file
+prompts_dir = "~/.config/claude-sandbox/prompts"
 # ccs warmup 没带 --prompt 时，从这几句里随机挑一句。
 prompts = [
   "你好，用一句话介绍一下你自己",
@@ -55,8 +62,10 @@ prompts = [
   "写一句适合早上发的问候语",
 ]
 # 每个字符的输入间隔（毫秒）。
-type_delay_ms = 35
+type_delay_ms = 140
+type_jitter_ms = 50
 # 等回复最长多少秒。
+send_confirm_s = 15
 reply_wait_s = 90
 # 第二次检查页面文字增长的间隔（秒）。
 poll_interval_s = 2

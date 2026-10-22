@@ -8,13 +8,14 @@ import shutil
 import subprocess
 import time
 from contextlib import suppress
+from pathlib import Path
 
 from ccs import config, paths, report, ui
 from ccs.browser import process
 from ccs.browser.prefs import build_pin
 from ccs.errors import die, log_line, say
 from ccs.network import pick_exit, resolve_exit
-from ccs.sandbox import store
+from ccs.sandbox import bundle, store
 from ccs.sandbox.model import Sandbox
 
 
@@ -162,6 +163,20 @@ def cmd_set_exit(args) -> int:
     if spec == "direct":
         say("         下次启动不设代理，走原生环境")
     return 0
+
+
+def cmd_export(args) -> int:
+    cfg = load_runtime()
+    output = Path(args.output) if args.output else Path(f"{args.name}.bundle.tar.gz")
+    pin = build_pin(cfg)
+    pin.pop("font.manifest", None)      # 清单由字体模式在本地重新生成，不写进包里
+    return bundle.export_bundle(args.name, output, cfg, pin)
+
+
+def cmd_import(args) -> int:
+    cfg = load_runtime()
+    _check_name(args.name)
+    return bundle.import_bundle(Path(args.bundle), args.name, cfg)
 
 
 def cmd_mv(args) -> int:

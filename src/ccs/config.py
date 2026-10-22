@@ -109,7 +109,9 @@ DEFAULT_CONFIG = {
     },
     "warmup": {
         "prompts": WARM_PROMPTS,
-        "type_delay_ms": 35,
+        "type_delay_ms": 140,      # 每个字的基准间隔（毫秒），真人大概这个量级
+        "type_jitter_ms": 50,      # 上下浮动
+        "send_confirm_s": 15,
         "reply_wait_s": 90,
         "poll_interval_s": 2,
         "min_growth": 120,

@@ -18,7 +18,8 @@ def western_font_manifest(cfg: dict) -> str:
     return "\n".join(kept) + "\n"
 
 
-def build_pin(cfg: dict) -> dict:
+def build_pin(cfg: dict, overrides: dict | None = None,
+              fonts_mode: str | None = None) -> dict:
     pin = config.parse_screen(cfg.get("screen"))
     dpr = cfg.get("dpr")
     if dpr not in (None, ""):
@@ -28,10 +29,13 @@ def build_pin(cfg: dict) -> dict:
         pin["dark_theme"] = False
     elif scheme != "auto":
         pin["dark_theme"] = True
-    if str(cfg.get("fonts") or "western").lower() != "all":
+    mode = str(fonts_mode or cfg.get("fonts") or "western").lower()
+    if mode != "all":
         manifest = western_font_manifest(cfg)
         if manifest:
             pin["font.manifest"] = manifest
+    if overrides:
+        pin.update({k: v for k, v in overrides.items() if v not in (None, "")})
     return pin
 
 

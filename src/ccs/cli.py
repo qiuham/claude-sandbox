@@ -29,6 +29,22 @@ def _add_run_commands(sub) -> None:
     p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
     p.set_defaults(func=tasks.cmd_web)
 
+    p = sub.add_parser("export", help="导出沙盒身份（种子 + cookie + 指纹 pin）")
+    p.add_argument("name")
+    p.add_argument("-o", "--output", default="", help="输出文件（默认 <名字>.bundle.tar.gz）")
+    p.set_defaults(func=lifecycle.cmd_export)
+
+    p = sub.add_parser("import", help="从导出包新建沙盒（指纹和登录态一致）")
+    p.add_argument("bundle")
+    p.add_argument("name")
+    p.set_defaults(func=lifecycle.cmd_import)
+
+    p = sub.add_parser("refresh", help="探测会话是否还活着，并刷新账号信息")
+    p.add_argument("name")
+    _add_exit_flags(p)
+    p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
+    p.set_defaults(func=tasks.cmd_refresh)
+
     p = sub.add_parser("check", help="无头自检：出口 IP / WebRTC（需要 xvfb）")
     p.add_argument("name")
     _add_exit_flags(p)
