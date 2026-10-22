@@ -48,10 +48,11 @@ exit = "socks5h://127.0.0.1:7897"
 
 ## 手工版（WSL / 本机）
 
-1. 一键安装（需要 [uv](https://docs.astral.sh/uv/)）：
+1. 一键安装：
 
 ```
-make setup
+make setup            # 没装 uv 会先问一句要不要装
+make setup AUTO=1     # 不问，直接装 uv
 ```
 
 它做四件事：`uv sync` 建环境装依赖 → 下载浏览器引擎（约 260 MB）→
