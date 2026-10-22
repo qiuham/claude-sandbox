@@ -65,11 +65,3 @@ def lookup(ip: str, *, timeout_s: float = 1.5) -> str:
         cache[ip] = {"label": label, "ts": int(time.time())}
         _save_cache(cache)
     return label
-
-
-def describe(ip: str, node: str = "") -> str:
-    """括号里显示的内容。有节点名就用节点名代替运营商。"""
-    base = lookup(ip)
-    place, _, isp = base.partition(" · ")
-    tail = node or isp
-    return " · ".join(x for x in (place, tail) if x)

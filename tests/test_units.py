@@ -436,14 +436,9 @@ class GeoTests(unittest.TestCase):
             self.assertEqual(geo.lookup("1.2.3.4"), "美国 圣何塞 · Wave Broadband")
         self.assertEqual(fetch.call_count, 1)
 
-    def test_describe_uses_node_name(self):
-        with mock.patch.object(geo, "lookup", return_value="美国 圣何塞 · Wave Broadband"):
-            self.assertEqual(geo.describe("1.2.3.4", "[vless]美国Wave1"),
-                             "美国 圣何塞 · [vless]美国Wave1")
-
-    def test_describe_empty_when_unknown(self):
-        with mock.patch.object(geo, "lookup", return_value=""):
-            self.assertEqual(geo.describe("1.2.3.4"), "")
+    def test_unknown_ip_gives_empty_label(self):
+        with mock.patch.object(geo, "_fetch", return_value=""):
+            self.assertEqual(geo.lookup("1.2.3.4"), "")
 
 
 class StunTests(unittest.TestCase):

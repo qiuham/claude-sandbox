@@ -14,7 +14,7 @@ from ccs import config, paths, report, ui
 from ccs.browser import deps, process
 from ccs.browser.prefs import build_pin
 from ccs.errors import die, log_line, say
-from ccs.network import clash, discover, pick_exit, resolve_exit, stun
+from ccs.network import discover, pick_exit, resolve_exit, stun
 from ccs.sandbox import bundle, store
 from ccs.sandbox.model import Sandbox
 from ccs.ui import rich_version
@@ -289,7 +289,4 @@ def cmd_doctor(_args) -> int:
     default = str(cfg.get("exit") or "auto")
     hint = {"auto": "（new 时自动找本机代理）", "direct": "（不走代理）"}.get(default, "")
     say(f"出口      : {default}{hint}")
-    node = clash.current_node()
-    if node:
-        say(f"当前节点  : {node}")
     return 0

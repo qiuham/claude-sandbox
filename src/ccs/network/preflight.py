@@ -6,7 +6,7 @@ import subprocess
 
 from ccs import config
 from ccs.errors import die, say
-from ccs.network import clash, geo
+from ccs.network import geo
 from ccs.sandbox import store
 
 
@@ -40,10 +40,9 @@ def preflight(name: str, spec: str, proxy: str, cfg: dict,
         say("         出口 IP 由这台机器的 TUN/透明代理决定；沙盒不替你设代理")
     ip = curl_exit(proxy, cfg)
     ok = not ip.startswith("(")
-    node = clash.current_node() if proxy else ""
     label = str(cfg.get("exit_label") or "")
     if ok and not label:
-        label = geo.describe(ip, node)
+        label = geo.lookup(ip)
     say(f"出口 IP : {ip}" + (f"（{label}）" if label else ""))
     if not ok:
         return ip
@@ -53,9 +52,8 @@ def preflight(name: str, spec: str, proxy: str, cfg: dict,
         if die_on_change:
             die(f"出口 IP 变了（上次 {known}，现在 {ip}）。\n       同一个号跨会话换 IP 是风险信号，已阻止启动。\n       确实要换：加 --allow-ip-change，或把配置里的 strict_ip 改成 false。")
         say(f"注意    : 出口 IP 变了（上次 {known}，现在 {ip}）—— 同一个号跨会话换 IP 是风险信号")
+    meta.pop("exit_node", None)          # 旧版本记过 Clash 节点名，已经不用了
     meta["exit_ip"] = ip
-    if node:
-        meta["exit_node"] = node
     if label:
         meta["exit_label"] = label
     store.write_meta(name, meta)

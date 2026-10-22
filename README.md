@@ -51,8 +51,7 @@ exit = "socks5h://127.0.0.1:7897"
 * 命令行 `--exit <地址>` 或 `--exit direct` 优先于配置。
 * `ccs doctor` 会列出检测到的本机代理，并用 STUN 量一次 UDP 出口。
 * `ccs ls` / `ccs status` / 启动时会显示出口 IP 的标签：
-  按 IP 查地理位置（缓存 7 天）；Clash Verge 用户会带上当前节点名。
-  配置里写 `exit_label = "JP-1"` 可自定义。
+  按 IP 查地理位置（缓存 7 天）。配置里写 `exit_label = "JP-1"` 可自定义。
 
 ## 手工版（WSL / 本机）
 

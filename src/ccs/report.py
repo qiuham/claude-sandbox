@@ -90,7 +90,7 @@ def format_created(value: str) -> str:
 def exit_ip_label(info: dict) -> str:
     """出口 IP 加上当前节点名：104.202.107.35（[vless]美国Wave1）。"""
     ip = str(info.get("exit_ip") or "")
-    label = str(info.get("exit_label") or info.get("exit_node") or "")
+    label = str(info.get("exit_label") or "")
     if not ip:
         return "-（启动一次后记录）"
     return f"{ip}（{label}）" if label else ip
