@@ -2,28 +2,15 @@ PREFIX ?= $(HOME)/.local
 BIN    := $(PREFIX)/bin
 REPO   := $(CURDIR)
 
-.PHONY: setup install uninstall test lint version
+.PHONY: setup dev install uninstall test lint version
 
-# 一键安装：uv 建环境 → 装依赖 → 下载浏览器引擎 → 装命令 → 自检
+# 一键安装：走 install.sh（不依赖 make，没装 make 也能直接跑脚本）
 setup:
-	@if ! command -v uv >/dev/null; then \
-		if [ "$(AUTO)" = "1" ]; then \
-			echo "安装 uv ..."; \
-			curl -LsSf https://astral.sh/uv/install.sh | sh || exit 1; \
-		else \
-			printf "缺少 uv（Python 包管理器）。现在装吗？[y/N] "; \
-			read answer; \
-			case "$$answer" in \
-				y|Y) curl -LsSf https://astral.sh/uv/install.sh | sh || exit 1 ;; \
-				*) echo "已取消。手动安装：https://docs.astral.sh/uv/getting-started/installation/"; exit 1 ;; \
-			esac; \
-		fi; \
-	fi
-	@export PATH="$$HOME/.local/bin:$$PATH"; uv sync
-	@export PATH="$$HOME/.local/bin:$$PATH"; uv run python -m invisible_playwright fetch
-	$(MAKE) install
-	@echo ""
-	@./ccs doctor || true
+	./install.sh
+
+# 开发环境：连 ruff 一起装
+dev:
+	./install.sh --dev
 
 install:
 	install -d $(BIN)

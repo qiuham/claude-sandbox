@@ -51,12 +51,15 @@ exit = "socks5h://127.0.0.1:7897"
 1. 一键安装：
 
 ```
-make setup            # 没装 uv 会先问一句要不要装
-make setup AUTO=1     # 不问，直接装 uv
+./install.sh          # 只装运行依赖（没有 ruff 这类开发工具）
+./install.sh --dev    # 开发用：连 ruff 一起装
+./install.sh --auto   # 没装 uv 时直接装，不询问
 ```
 
-它做四件事：`uv sync` 建环境装依赖 → 下载浏览器引擎（约 260 MB）→
-把 `ccs` 软链到 `~/.local/bin` → 跑一次 `ccs doctor` 自检。
+没有 make 也能直接跑脚本。它做四件事：`uv sync` 建环境装依赖 →
+下载浏览器引擎（约 260 MB）→ 把 `ccs` 软链到 `~/.local/bin` → 跑一次 `ccs doctor` 自检。
+
+装了 make 的话，`make setup` 等于 `./install.sh`，`make dev` 等于 `./install.sh --dev`。
 
 引擎版本钉在 `pyproject.toml` 里（`invisible-playwright==0.35.10`）。
 **指纹一致依赖引擎版本一致**，对方装同样版本，同一个 seed 才能还原同样的指纹。
