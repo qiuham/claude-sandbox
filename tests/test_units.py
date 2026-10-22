@@ -28,9 +28,10 @@ from ccs.browser.tasks import (  # noqa: E402
     webrtc_public_ips,
     webrtc_verdict,
 )
-from ccs.network import discover, geo, stun  # noqa: E402
+from ccs.network import discover, geo, regions, stun  # noqa: E402
 from ccs.network.dns_relay import DnsRelay  # noqa: E402
 from ccs.network.doh import ATYP_DOMAIN, DohClient  # noqa: E402
+from ccs.network.preflight import _check_region  # noqa: E402
 from ccs.network.proxy import resolve_exit  # noqa: E402
 from ccs.report import format_created  # noqa: E402
 from ccs.sandbox import (  # noqa: E402
@@ -429,6 +430,33 @@ class WebrtcDeclareTests(unittest.TestCase):
         self.assertEqual(webrtc_declared_ip("http://127.0.0.1:7890", "1.2.3.4"), "1.2.3.4")
 
 
+class RegionTests(unittest.TestCase):
+    """Claude 支持地区的判断：只认 ISO 码，查不到就放行。"""
+
+    def test_key_countries(self):
+        for code in ("US", "JP", "SG", "TW"):
+            self.assertTrue(regions.supported(code), code)
+        for code in ("HK", "MO", "CN"):
+            self.assertFalse(regions.supported(code), code)
+        self.assertGreater(len(regions.SUPPORTED), 170)
+
+    def test_unsupported_region_blocks(self):
+        with mock.patch.object(geo, "country_code", return_value="HK"), \
+                mock.patch.object(geo, "lookup", return_value="香港 Hong Kong"):
+            with self.assertRaises(SystemExit):
+                _check_region("1.2.3.4", {"region_check": True}, allow_region=False)
+
+    def test_supported_and_unknown_are_allowed(self):
+        for code in ("US", ""):
+            with mock.patch.object(geo, "country_code", return_value=code):
+                _check_region("1.2.3.4", {"region_check": True}, allow_region=False)
+
+    def test_switch_off(self):
+        with mock.patch.object(geo, "country_code", return_value="CN"):
+            _check_region("1.2.3.4", {"region_check": False}, allow_region=False)
+            _check_region("1.2.3.4", {"region_check": True}, allow_region=True)
+
+
 class CrashReportTests(unittest.TestCase):
     """崩溃原因：只认本次会话之后写的文件。"""
 
@@ -463,14 +491,16 @@ class GeoTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def test_lookup_caches_result(self):
-        with mock.patch.object(geo, "_fetch", return_value="美国 圣何塞 · Wave Broadband") as fetch:
+        with mock.patch.object(geo, "_fetch",
+                               return_value=("美国 圣何塞 · Wave Broadband", "US")) as fetch:
             self.assertEqual(geo.lookup("1.2.3.4"), "美国 圣何塞 · Wave Broadband")
             self.assertEqual(geo.lookup("1.2.3.4"), "美国 圣何塞 · Wave Broadband")
         self.assertEqual(fetch.call_count, 1)
 
     def test_unknown_ip_gives_empty_label(self):
-        with mock.patch.object(geo, "_fetch", return_value=""):
+        with mock.patch.object(geo, "_fetch", return_value=("", "")):
             self.assertEqual(geo.lookup("1.2.3.4"), "")
+            self.assertEqual(geo.country_code("1.2.3.4"), "")
 
 
 class StunTests(unittest.TestCase):

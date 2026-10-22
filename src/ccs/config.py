@@ -100,6 +100,8 @@ DEFAULT_CONFIG = {
     "color_scheme": "dark",
     "humanize_s": 1.5,          # 单次鼠标动作的时间上限（秒），越大越慢越自然
     "strict_ip": True,
+    # 出口在 Claude 不支持的地区就拒绝启动（名单见 network/regions.py）
+    "region_check": True,
     "dns": {
         "doh_ip": "1.1.1.1",
         "doh_name": "cloudflare-dns.com",

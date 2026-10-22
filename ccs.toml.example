@@ -24,6 +24,9 @@ fit_window = true
 # 出口 IP 变了就拒绝启动。默认 true；改成 false 只提示。
 strict_ip = true
 
+# 出口在 Claude 不支持的地区（例如香港、中国大陆）就拒绝启动。默认 true。
+region_check = true
+
 # 出口 IP 后面显示的标签。不写就按 IP 查地理位置（例如“美国 圣何塞 · Wave Broadband”）。
 # exit_label = "JP-1"
 

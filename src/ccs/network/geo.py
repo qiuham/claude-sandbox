@@ -14,8 +14,8 @@ from urllib.parse import quote
 from urllib.request import urlopen
 
 CACHE_TTL_S = 7 * 24 * 3600
-CACHE_VERSION = 3
-FIELDS = "status,country,city,isp"
+CACHE_VERSION = 4
+FIELDS = "status,country,countryCode,city,isp"
 API = "http://ip-api.com/json/{ip}?fields={fields}&lang=zh-CN"
 
 
@@ -40,30 +40,42 @@ def _save_cache(data: dict) -> None:
         pass
 
 
-def _fetch(ip: str, timeout_s: float) -> str:
+def _fetch(ip: str, timeout_s: float) -> tuple[str, str]:
+    """返回（标签, 两位国家码）。查不到就是两个空串。"""
     url = API.format(ip=quote(ip), fields=FIELDS)
     try:
         with urlopen(url, timeout=timeout_s) as resp:  # noqa: S310 - ip-api 的免费接口只开 http
             data = json.loads(resp.read().decode("utf-8"))
     except (OSError, ValueError):
-        return ""
+        return "", ""
     if data.get("status") != "success":
-        return ""
+        return "", ""
     place = " ".join(x for x in (data.get("country"), data.get("city")) if x)
-    return " · ".join(x for x in (place, data.get("isp")) if x)
+    label = " · ".join(x for x in (place, data.get("isp")) if x)
+    return label, str(data.get("countryCode") or "").upper()
 
 
-def lookup(ip: str, *, timeout_s: float = 1.5) -> str:
-    """“美国 圣何塞 · Wave Broadband”。查不到返回空串。"""
+def details(ip: str, *, timeout_s: float = 1.5) -> tuple[str, str]:
+    """（标签, 两位国家码）。"""
     if not ip or ip.startswith("("):
-        return ""
+        return "", ""
     cache = _load_cache()
     item = cache.get(ip)
     if (isinstance(item, dict) and item.get("v") == CACHE_VERSION
             and time.time() - float(item.get("ts") or 0) < CACHE_TTL_S):
-        return str(item.get("label") or "")
-    label = _fetch(ip, timeout_s)
-    if label:
-        cache[ip] = {"label": label, "ts": int(time.time()), "v": CACHE_VERSION}
+        return str(item.get("label") or ""), str(item.get("cc") or "")
+    label, code = _fetch(ip, timeout_s)
+    if label or code:
+        cache[ip] = {"label": label, "cc": code, "ts": int(time.time()), "v": CACHE_VERSION}
         _save_cache(cache)
-    return label
+    return label, code
+
+
+def lookup(ip: str, *, timeout_s: float = 1.5) -> str:
+    """“美国 圣何塞 · Wave Broadband”。查不到返回空串。"""
+    return details(ip, timeout_s=timeout_s)[0]
+
+
+def country_code(ip: str, *, timeout_s: float = 1.5) -> str:
+    """两位国家码，例如 US、JP；查不到返回空串。"""
+    return details(ip, timeout_s=timeout_s)[1]

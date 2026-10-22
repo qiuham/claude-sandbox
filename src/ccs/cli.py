@@ -21,12 +21,17 @@ def _add_create_commands(sub) -> None:
     p.set_defaults(func=lifecycle.cmd_new)
 
 
+def _add_safety_flags(p) -> None:
+    p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
+    p.add_argument("--allow-region", action="store_true", help="出口在 Claude 不支持的地区也允许启动")
+
+
 def _add_run_commands(sub) -> None:
     p = sub.add_parser("web", help="打开沙盒窗口，手工注册")
     p.add_argument("name")
     _add_exit_flags(p)
     p.add_argument("--timeout", type=int, default=0, help="多少秒后自动关闭（0 = 一直开着）")
-    p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
+    _add_safety_flags(p)
     p.set_defaults(func=tasks.cmd_web)
 
     p = sub.add_parser("export", help="导出沙盒身份（种子 + cookie + 指纹 pin）")
@@ -42,13 +47,13 @@ def _add_run_commands(sub) -> None:
     p = sub.add_parser("refresh", help="探测会话是否还活着，并刷新账号信息")
     p.add_argument("name")
     _add_exit_flags(p)
-    p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
+    _add_safety_flags(p)
     p.set_defaults(func=tasks.cmd_refresh)
 
     p = sub.add_parser("check", help="无头自检：出口 IP / WebRTC（需要 xvfb）")
     p.add_argument("name")
     _add_exit_flags(p)
-    p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
+    _add_safety_flags(p)
     p.set_defaults(func=tasks.cmd_check)
 
     p = sub.add_parser("warmup", help="养号：发一句预设的话，等回复")
@@ -56,7 +61,7 @@ def _add_run_commands(sub) -> None:
     _add_exit_flags(p)
     p.add_argument("--prompt", default="", help="指定要说的话（默认随机挑一句）")
     p.add_argument("--headless", action="store_true", help="不显示窗口（需要 Xvfb）")
-    p.add_argument("--allow-ip-change", action="store_true", help="出口 IP 变了也允许启动")
+    _add_safety_flags(p)
     p.set_defaults(func=tasks.cmd_warmup)
 
 

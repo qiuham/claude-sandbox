@@ -6,7 +6,7 @@ import subprocess
 
 from ccs import config
 from ccs.errors import die, say
-from ccs.network import geo
+from ccs.network import geo, regions
 from ccs.sandbox import store
 
 
@@ -31,8 +31,20 @@ def curl_exit(proxy: str, cfg: dict) -> str:
         return f"(失败: {exc})"
 
 
-def preflight(name: str, spec: str, proxy: str, cfg: dict,
-              *, die_on_change: bool = True) -> str:
+def _check_region(ip: str, cfg: dict, *, allow_region: bool) -> None:
+    """出口在 Claude 不支持的地区就不让启动。查不到国家码时放行。"""
+    if allow_region or not cfg.get("region_check", True):
+        return
+    code = geo.country_code(ip)
+    if not code or regions.supported(code):
+        return
+    label = geo.lookup(ip) or code
+    die(f"出口在 {label}（{code}），Claude 不支持这个地区，已阻止启动。\n"
+        "       确认要继续：加 --allow-region，或把配置里的 region_check 改成 false。")
+
+
+def preflight(name: str, spec: str, proxy: str, cfg: dict,  # noqa: PLR0913 - 参数都是预检要用的
+              *, die_on_change: bool = True, allow_region: bool = False) -> str:
     if proxy:
         say(f"出口    : {spec}")
     else:
@@ -46,6 +58,7 @@ def preflight(name: str, spec: str, proxy: str, cfg: dict,
     say(f"出口 IP : {ip}" + (f"（{label}）" if label else ""))
     if not ok:
         return ip
+    _check_region(ip, cfg, allow_region=allow_region)
     meta = store.read_meta(name)
     known = meta.get("exit_ip")
     if known and known != ip:
