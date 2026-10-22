@@ -21,6 +21,7 @@ from pathlib import Path
 
 from ccs import paths
 from ccs.errors import die, say
+from ccs.network import geo
 from ccs.sandbox import store
 
 BUNDLE_VERSION = 1
@@ -125,11 +126,14 @@ def import_bundle(bundle: Path, name: str, cfg: dict) -> int:
         shutil.copy2(tmpdir / "cookies.sqlite", profile / "cookies.sqlite")
 
     exit_spec = str(info.get("exit") or cfg.get("exit") or "direct")
+    # 标签按本机重新查一次：包里带的是导出时那台机器的版本，格式可能旧了
+    exit_ip = str(info.get("exit_ip") or "")
+    label = geo.lookup(exit_ip) or str(info.get("label") or "")
     store.write_meta(name, {
         "name": name,
         "exit": exit_spec,
-        "exit_ip": info.get("exit_ip", ""),
-        "exit_label": info.get("label", ""),
+        "exit_ip": exit_ip,
+        "exit_label": label,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "pin": info.get("pin") or {},
         "fonts": info.get("fonts") or "",
@@ -145,9 +149,8 @@ def import_bundle(bundle: Path, name: str, cfg: dict) -> int:
     say(f"已导入: {name}（来自 {info.get('sandbox') or '未知沙盒'}）")
     say(f"账号    : {info.get('email') or '-'}")
     say(f"出口    : {exit_spec}")
-    if info.get("exit_ip"):
-        label = info.get("label") or ""
+    if exit_ip:
         tail = f"（{label}）" if label else ""
-        say(f"原出口IP: {info['exit_ip']}{tail}（首次启动会核对，不一致会拦住）")
+        say(f"原出口IP: {exit_ip}{tail}（首次启动会核对，不一致会拦住）")
     say(f"下一步  : ccs web {name}")
     return 0
