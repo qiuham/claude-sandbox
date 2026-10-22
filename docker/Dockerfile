@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ccs /usr/local/bin/ccs
+COPY src /usr/local/bin/src
 COPY docker/entrypoint.sh /usr/local/bin/sandbox-entrypoint
 RUN chmod 755 /usr/local/bin/ccs /usr/local/bin/sandbox-entrypoint \
     && mkdir -p /data && chown 1000:1000 /data

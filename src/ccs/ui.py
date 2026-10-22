@@ -1,0 +1,83 @@
+"""终端富文本输出：表格、颜色、截断。
+
+Rich 是可选依赖：装了就用表格，没装就退回 report.py 生成的纯文本行。
+和 cca 用同一个钉住的版本，避免两个工具在同一台机器上打架。
+"""
+
+from __future__ import annotations
+
+from importlib import metadata
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.table import Table
+
+RICH_VERSION = "15.0.0"
+
+
+def rich_available() -> bool:
+    """装着钉住版本的 Rich 吗？不抛错，供探路用。"""
+    try:
+        return metadata.version("rich") == RICH_VERSION
+    except Exception:  # noqa: BLE001 - 没有就是没有
+        return False
+
+
+def _console():
+    from rich.console import Console  # noqa: PLC0415 - 只在真正渲染时导入
+
+    return Console()
+
+
+def emit_table(headers: list[str], rows: list[list[str]], *,
+               title: str = "", fallback: list[str],
+               styles: list[list[str]] | None = None) -> None:
+    """有 Rich 就画表格，没有就逐行打印 fallback。"""
+    if not rich_available():
+        for line in fallback:
+            print(line)  # noqa: T201 - CLI 输出边界
+        return
+
+    table: Table = _table(title)
+    for header in headers:
+        # 每列都给 min_width：只给第一列的话，Rich 会把第一列挤成 0 宽直接消失
+        table.add_column(header, overflow="ellipsis", no_wrap=True, min_width=4)
+    for index, row in enumerate(rows):
+        if styles and index < len(styles):
+            table.add_row(*[_cell(value, styles[index][col] if col < len(styles[index]) else "")
+                            for col, value in enumerate(row)])
+        else:
+            table.add_row(*row)
+    _console().print(table)
+
+
+def _cell(value: str, style: str):
+    if not style:
+        return value
+    from rich.text import Text  # noqa: PLC0415 - 只在真正渲染时导入
+
+    return Text(value, style=style)
+
+
+def _table(title: str) -> Table:
+    from rich.table import Table  # noqa: PLC0415 - 只在真正渲染时导入
+
+    return Table(title=title or None, box=None, header_style="bold",
+                 title_style="bold", pad_edge=False, show_edge=False)
+
+
+def emit_pairs(pairs: list[tuple[str, str]], *, title: str = "", fallback: list[str],
+               styles: list[str] | None = None) -> None:
+    """两列（字段 : 值）的表格；没有 Rich 就逐行打印。"""
+    if not rich_available():
+        for line in fallback:
+            print(line)  # noqa: T201 - CLI 输出边界
+        return
+
+    table = _table(title)
+    table.add_column("", style="dim", no_wrap=True)
+    table.add_column("", overflow="ellipsis", no_wrap=True)
+    for index, (key, value) in enumerate(pairs):
+        style = styles[index] if styles and index < len(styles) else ""
+        table.add_row(key, _cell(value, style))
+    _console().print(table)

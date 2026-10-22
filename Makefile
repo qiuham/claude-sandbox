@@ -2,7 +2,7 @@ PREFIX ?= $(HOME)/.local
 BIN    := $(PREFIX)/bin
 REPO   := $(CURDIR)
 
-.PHONY: install uninstall test version
+.PHONY: install uninstall test lint version
 
 install:
 	install -d $(BIN)
@@ -15,6 +15,9 @@ uninstall:
 
 test:
 	.venv/bin/python -m unittest discover -s tests -v
+
+lint:
+	uv run --frozen ruff check tests/ src/ ccs
 
 version:
 	@cat VERSION

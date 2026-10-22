@@ -1,0 +1,138 @@
+# ccs 配置示例。复制到 ~/.config/claude-sandbox/ccs.toml 后按需修改。
+# 不写这个文件 = 全部用默认值：出口 direct，屏幕 1920x1080，去掉简繁中文字体。
+# 旧版的 config.json 仍然会读取，并在启动时提示"已迁移"。
+
+# 出口：不写 = direct（不用代理，走本机 TUN/透明代理）。
+# 写了 = 默认走这个代理。命令行 --exit / --proxy 优先于这里。
+exit = "socks5h://127.0.0.1:7897"
+
+# 屏幕面板尺寸（设备像素）。默认 1920x1080；不能超过显示器分辨率。
+# 写 auto 表示按指纹种子生成。
+screen = "1920x1080"
+# 配色：dark / light / auto（auto = 跟种子随机）
+color_scheme = "dark"
+
+# 缩放比例，只能写 1 / 1.25 / 1.5 / 2。4K 配 2 才是页面看到 1920x1080。
+dpr = 1
+
+# 字体集合。默认 western（去掉简繁中文字体）；写 all 保留全部。
+fonts = "western"
+
+# 让页面跟着窗口重排（去掉 Playwright 固定的 viewport）。默认 true。
+fit_window = true
+
+# 出口 IP 变了就拒绝启动。默认 true；改成 false 只提示。
+strict_ip = true
+
+# 字体清单里要丢掉的关键字（不区分大小写）。
+fonts_markers = [
+  "Microsoft YaHei", "NSimSun", "SimSun", "Microsoft JhengHei",
+  "MingLiU", "PMingLiU", "msyh", "simsun",
+]
+
+[dns]
+# 沙盒自带 DNS 中继用 DoH 查域名，只把 IP 交给上游代理。
+doh_ip = "1.1.1.1"
+doh_name = "cloudflare-dns.com"
+doh_path = "/dns-query"
+# 缓存秒数：按响应 TTL，最短 ttl_min，最长 ttl_max。
+ttl_min = 30
+ttl_max = 300
+# 本地监听地址。listen_port = 0 表示每次启动挑一个空闲端口。
+listen_host = "127.0.0.1"
+listen_port = 0
+# 连上游代理的超时（秒）。
+connect_timeout_s = 15
+# 浏览器连接中继的超时（秒）。
+client_timeout_s = 30
+
+[warmup]
+# ccs warmup 没带 --prompt 时，从这几句里随机挑一句。
+prompts = [
+  "你好，用一句话介绍一下你自己",
+  "帮我把这句话改得更简洁：今天的工作已经全部完成了",
+  "用一句话解释什么是云服务器",
+  "写一句适合早上发的问候语",
+]
+# 每个字符的输入间隔（毫秒）。
+type_delay_ms = 35
+# 等回复最长多少秒。
+reply_wait_s = 90
+# 第二次检查页面文字增长的间隔（秒）。
+poll_interval_s = 2
+# 页面文字至少增加这么多字符，才算收到回复。
+min_growth = 120
+
+[paths]
+# 沙盒根目录。环境变量 SANDBOX_ROOT 优先。
+root = "~/sandboxes"
+profile_dir = "profile"
+meta_file = "meta.json"
+account_file = "account.json"
+log_file = "ccs.log"
+
+[browser.timeouts]
+# 量出口 IP 的超时（秒）。
+preflight_s = 15
+# curl 子进程的总超时（秒）。
+preflight_process_s = 25
+# Playwright 默认超时（毫秒）。
+page_ms = 45000
+# 打开页面（ipify / claude.ai / cloudflare）的超时（毫秒）。
+goto_ms = 90000
+# 找输入框的超时（毫秒）。
+selector_ms = 15000
+# 等养号回复的超时（秒）。
+warmup_s = 90
+# 手工模式下抓账号信息的间隔（秒）。
+harvest_interval_s = 45
+# 关浏览器时 SIGTERM → SIGKILL 的宽限（秒）。
+close_grace_s = 5
+# 关闭线程最多等多少秒。
+close_join_s = 5
+# 强关之后再等多少秒。
+close_join_extra_s = 2
+# DNS 中继启动超时（秒）。
+# DNS 中继端口探测超时（秒）。
+# DNS 中继端口探测的两次尝试间隔（秒）。
+# DNS 中继收到 SIGTERM 后等多少秒。
+relay_stop_s = 1
+# pgrep 的超时（秒）。
+pgrep_s = 5
+# SIGTERM 之后检查进程的间隔（秒）。
+kill_poll_s = 0.2
+# SIGKILL 之后的等待（秒）。
+kill_settle_s = 0.3
+# 手工模式等待窗口关闭时的睡眠间隔（秒）。
+run_sleep_s = 1
+
+[browser.prefs]
+# 沙盒浏览器的固定偏好。需要时覆盖；没写的用内置默认值。
+"network.proxy.socks_remote_dns" = true
+"network.trr.mode" = 3
+"network.trr.uri" = "https://cloudflare-dns.com/dns-query"
+"network.trr.custom_uri" = "https://cloudflare-dns.com/dns-query"
+"network.trr.bootstrapAddress" = "1.1.1.1"
+"browser.crashReports.unsubmittedCheck.enabled" = false
+"browser.tabs.crashReporting.sendReport" = false
+"breakpad.reportURL" = ""
+"browser.cache.disk.enable" = false
+"browser.cache.disk.capacity" = 0
+"browser.cache.disk_cache_ssl" = false
+"network.dns.disablePrefetch" = true
+"network.prefetch-next" = false
+"network.predictor.enabled" = false
+"network.http.speculative-parallel-limit" = 0
+"network.dns.disableIPv6" = true
+"network.http.http3.enabled" = false
+"network.http.altsvc.enabled" = false
+"network.http.altsvc.oe" = false
+"browser.sessionstore.resume_from_crash" = false
+"browser.sessionstore.max_resumed_crashes" = 0
+"browser.startup.page" = 0
+"browser.shell.checkDefaultBrowser" = false
+"browser.aboutwelcome.enabled" = false
+"datareporting.policy.dataSubmissionEnabled" = false
+"toolkit.telemetry.enabled" = false
+"browser.tabs.warnOnClose" = false
+"dom.disable_beforeunload" = true

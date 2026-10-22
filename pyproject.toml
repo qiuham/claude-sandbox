@@ -1,0 +1,39 @@
+[project]
+name = "claude-sandbox"
+version = "0.1.0"
+description = "Claude 注册沙盒（ccs）"
+requires-python = ">=3.13"
+dependencies = [
+    "invisible-playwright==0.35.10",
+    "rich==15.0.0",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.17"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+exclude = [".venv", "demo", "build", "dist"]
+
+[tool.ruff.lint]
+# 全开，只关掉三类：本项目不适用、和设计冲突、纯形式
+select = ["ALL"]
+ignore = [
+    "D",        # 缺文档字符串：220 个函数补"返回名称"只会变吵
+    "ANN",      # 缺类型标注：全局没标注，单独补几处更乱（另起一轮处理）
+    "CPY",      # 版权头
+    "PT",       # pytest 写法：本项目用 unittest
+    "RUF001", "RUF002", "RUF003",  # 中文标点被判为歧义 Unicode
+    "COM812",   # 尾逗号，交给格式化器
+    "E501",     # 行宽交给 ruff format，拆长字符串反而更难读
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG", "B011", "SIM117"]
+
+[tool.ruff.format]
+quote-style = "double"

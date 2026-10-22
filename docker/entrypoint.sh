@@ -19,4 +19,4 @@ export SANDBOX_ROOT="${SANDBOX_ROOT:-/data}"
 
 echo "沙盒已启动：profile=$PROFILE exit=$EXIT display=$DISPLAY_NUM"
 echo "noVNC: http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale"
-exec ccs start "$PROFILE" --exit "$EXIT"
+exec ccs web "$PROFILE" --exit "$EXIT"

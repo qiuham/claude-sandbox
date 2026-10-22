@@ -10,7 +10,7 @@
 | `ccs new <名字> [--exit 地址\|direct]` | 新建沙盒 |
 | `ccs ls [--json]`（别名 `list`） | 列出沙盒 |
 | `ccs status <名字> [--json]` | 沙盒详情（出口、种子、profile 大小） |
-| `ccs start <名字>`（别名 `open`） | 启动窗口，手工注册 |
+| `ccs web <名字>` | 打开窗口，手工注册 |
 | `ccs check <名字>` | 无头自检（出口 IP / WebRTC） |
 | `ccs set-exit <名字> <地址\|direct>` | 改沙盒出口 |
 | `ccs rm <名字> [--force]` | 删除沙盒（含 profile） |
@@ -34,13 +34,13 @@
 | 不配置 / `--exit direct` | 完全不用代理，走原生环境（出口由本机的 TUN/透明代理决定） |
 | 配置里写 `exit` / `--exit socks5h://…` | 显式走指定代理 |
 
-配置文件 `~/.config/claude-sandbox/config.json`（见 `config.example.json`）：
+配置文件 `~/.config/claude-sandbox/ccs.toml`（见 `ccs.toml.example`）：
 
-```json
-{
-  "exit": "socks5h://127.0.0.1:7897"
-}
+```toml
+exit = "socks5h://127.0.0.1:7897"
 ```
+
+旧版的 `~/.config/claude-sandbox/config.json` 仍然能读，启动时会提示"已迁移"。
 
 * 文件不存在 = direct。
 * `exit` 可以是任何 `socks5h://` / `http://` 地址。
@@ -65,7 +65,7 @@ ccs new profile1                 # 有配置就走配置的出口，没有就 di
 ccs new profile2 --exit direct    # 显式不用代理
 ccs ls                            # 列出所有沙盒
 ccs status profile1               # 出口、种子、profile 大小
-ccs start profile1                # 启动窗口（open 是别名）
+ccs web profile1                  # 打开窗口
 ccs set-exit profile1 socks5h://127.0.0.1:7897
 ccs rm profile2                   # 删除前会要求输入 yes
 ```
@@ -80,28 +80,127 @@ ccs check profile1
 
 ## DNS：沙盒内保证干净
 
-浏览器的 DNS 不走本机，也不走 Clash 的解析器：
+沙盒自带一个 DNS 中继（`src/ccs/network/dns_relay.py`）。`ccs web` 时在同一个进程里
+起一个线程，关窗口或进程退出时一起停掉，不会留下子进程。
 
 ```
-浏览器查域名
-  → DoH（HTTPS 请求，走同一条代理）
-  → 出口节点
-  → Cloudflare 解析
+浏览器 ──域名──> 中继 :随机端口 ──DoH（经代理连 1.1.1.1）──> Cloudflare
+                        └── IP ──> 上层代理（Clash）──> 出口
 ```
 
-对应 Firefox 偏好（启动时写入 profile，可用 `profile/prefs.js` 核对）：
+上层代理只收到 IP，看不到域名，所以**它的 DNS 配成什么样都不影响沙盒**。
+
+| 点 | 做法 |
+|---|---|
+| 解析器 | 只用 Cloudflare DoH（连 `1.1.1.1` 的 IP，不查任何域名） |
+| DoH 失败 | 直接失败，不退回系统 DNS |
+| 缓存 | 按响应 TTL 缓存，最短 30 秒，最长 300 秒 |
+| 上游 | 只支持 socks5；`http://` 出口跳过中继，由代理自己解析 |
+
+已经验证过：把 Clash 的 DNS 段整个关掉（让它退回系统 DNS）后，沙盒里打开
+ipleak 仍然只显示 Cloudflare 的解析器。
+
+中继的实现只用 Python 标准库，不需要额外组件。日志写在沙盒目录的 `ccs.log`。
+
+浏览器侧还关掉了所有绕过代理的通道（启动时写入 profile，可用 `profile/prefs.js` 核对）：
 
 | 偏好 | 值 | 作用 |
 |---|---|---|
-| `network.trr.mode` | `3` | 只用 DoH，不做系统 DNS 回退 |
-| `network.trr.uri` | `https://cloudflare-dns.com/dns-query` | 解析器本身也走代理 |
-| `network.proxy.socks_remote_dns` | `true` | SOCKS 把域名交给代理 |
+| `network.proxy.socks_remote_dns` | `true` | 域名交给中继，浏览器自己不做 DNS |
 | `network.dns.disablePrefetch` | `true` | 关掉提前解析 |
-| `network.dns.disableIPv6` | `true` | IPv6 DNS 也会绕过代理 |
+| `network.dns.disableIPv6` | `true` | 关掉 IPv6 解析 |
+| `network.http.http3.enabled` | `false` | HTTP/3 走 UDP，SOCKS 不带 UDP |
 
-代价：**代理不通时页面直接解析失败**（不会再退回系统 DNS）。这是为了"不泄露"做的取舍。
+说明：实测这个浏览器在配了代理时**不会**自己做 DoH（把 DoH 地址写坏，页面照样能开）。
+所以 DNS 只能交给中继，`network.trr.*` 在这里不起作用。
 
 验证：在沙盒窗口里打开 `ipleak.net`，DNS 那一栏应该只有 Cloudflare 的解析器，没有本机 ISP。
+
+## 屏幕和字体
+
+配置里可以固定这几样，其余指纹仍按种子生成：
+
+```toml
+exit = "socks5h://127.0.0.1:7897"
+screen = "1920x1080"
+dpr = 1
+fonts = "western"
+```
+
+| 键 | 默认 | 含义 |
+|---|---|---|
+| `screen` | `1920x1080` | 屏幕面板尺寸（设备像素）。`auto` = 按种子生成 |
+| `dpr` | `1` | 缩放比例。只能写 1、1.25、1.5、2（引擎只测过这四档） |
+| `fonts` | `western` | 去掉简繁中文字体（雅黑、宋体等），保留日文和西文；`all` = 保留全部 |
+| `strict_ip` | `true` | 出口 IP 和上次不一致时**拒绝启动**；`false` = 只提示不拦 |
+
+页面读到的 `screen.width` 是面板尺寸除以缩放比例。默认这组：
+
+```
+面板 1920x1080，缩放 100%  →  页面看到 1920x1080
+```
+
+⚠️ **窗口的物理大小等于面板大小，和缩放无关。** 面板比显示器大，右边和下边就会被切掉。
+所以 `screen` 不能超过自己显示器的分辨率。4K 面板在任何缩放下都是 3840 像素宽，
+在 2200 宽的屏上放不下；想要 4K 的"高档感"但屏不够宽，只能接受窗口被切。
+
+窗口大小由引擎固定成声明的尺寸，拖拽窗口不会让页面重新排版。
+
+屏幕是成套的：可用高度比总高度少 48 像素（Windows 任务栏），窗口外框比屏幕宽 16 像素，
+窗口位置是 `(-8, -8)`（最大化时边框在屏幕外）。现代码点深度固定 24 位。
+
+字体只改清单，不动字体文件。页面探测 `"Microsoft YaHei"` 会落到兜底字体，
+和一台没装中文语言包的 Windows 表现一致。
+
+## 账号信息
+
+沙盒登录 claude.ai 之后，`ccs` 会在页面里自动抓一次账号信息，存到
+`~/sandboxes/<名字>/account.json`（权限 0600，里面有会话密钥）：
+
+| 字段 | 来源 |
+|---|---|
+| `email` / `display_name` | `/api/account` |
+| `account_created_at` | `/api/account`（UTC） |
+| `org_id` / `org_name` / `org_created_at` | `/api/organizations` |
+| `plan` | `/api/organizations` 的 `rate_limit_tier` |
+| `session_key` | cookie `sessionKey` |
+
+抓取时机：打开 claude.ai 之后一次，之后每 45 秒一次（中途登录也能记上）。
+
+`ccs ls` 直接显示：
+
+```
+名字  出口 IP         账号                        档位  注册        组织
+003   24.249.245.74   claude003@justlovecode.com  免费  2026-10-22  fe33070d-171d-4b8b-8202-df474cf81d05
+```
+
+颜色：名字加粗；档位按等级着色（Max 洋红、Pro 青色、免费压暗）；组织和缺失值压暗。
+`ccs status` 会多出账号段：账号、档位、计费、组织、注册。
+
+要 sessionKey 用 `ccs key 003`：直接复制到 Windows 剪贴板，只显示前 18 个字符。
+加 `--show` 才完整打印。
+
+⚠️ 抓取必须在浏览器里做。用 curl 带 cookie 请求会被 Cloudflare 拦掉，
+返回 `Just a moment...`。
+
+## 出口 IP 变了会怎样
+
+严格模式默认开启。同一个沙盒第一次启动会记下出口 IP，以后每次启动都比对：
+
+```
+出口 IP : 24.249.245.74        ← 和记录一致，正常启动
+出口 IP : 8.8.8.8
+错误: 出口 IP 变了（上次 24.249.245.74，现在 8.8.8.8）。
+      同一个号跨会话换 IP 是风险信号，已阻止启动。
+```
+
+确实要换（比如换了节点）时，两种办法：
+
+```
+ccs web 003 --allow-ip-change      # 这一次放行，并记下新 IP
+```
+
+或者把配置里的 `strict_ip` 改成 `false`，以后只提示不拦。
 
 ## 本机 Clash 的注意点
 
@@ -146,3 +245,33 @@ http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
 - **沙盒不保证不被封。** 账号能不能活下来主要看注册物料（邮箱域名、地址样式、IP 信誉）
   和注册行为；沙盒只保证"不因为本机泄露被单独挑出来"。
 - 平台没有"本计费周期"的接口；订阅日期只能看到首次订阅时间（`subscription_created_at`）。
+
+## 开发
+
+```
+make test    # 单元测试（25 条）
+make lint    # ruff：F/E/B/SIM/C90/RUF，圈复杂度上限 12
+```
+
+代码在 `src/ccs/`，分层：
+
+| 模块 | 职责 |
+|---|---|
+| `cli.py` | 参数解析和分发，不含逻辑 |
+| `config.py` | TOML 读取、默认值、校验、旧 JSON 迁移 |
+| `paths.py` | 所有路径 |
+| `errors.py` | `die()` / `say()` / `log_line()` |
+| `sandbox/model.py` | `Sandbox` dataclass |
+| `sandbox/store.py` | meta.json / account.json 读写（纯 IO） |
+| `sandbox/lifecycle.py` | new / ls / status / mv / rm 等沙盒命令 |
+| `network/proxy.py` | 出口 spec 解析 |
+| `network/preflight.py` | 量出口 IP |
+| `network/doh.py` | DoH 客户端（带 TTL 缓存） |
+| `network/dns_relay.py` | 同进程 DNS 中继（线程） |
+| `browser/prefs.py` | 从配置生成浏览器偏好 |
+| `browser/process.py` | 进程查找、僵尸判断、清场 |
+| `browser/launcher.py` | 起浏览器、pin、生命周期 |
+| `browser/tasks.py` | open / warmup / harvest |
+| `report.py` | ls / status / account 的终端表格 |
+
+`ccs` 本身只剩启动器（27 行），负责切到仓库的 `.venv` 再跑 `python -m ccs`。
