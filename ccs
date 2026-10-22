@@ -73,6 +73,10 @@ SANDBOX_PREFS = {
     "network.http.speculative-parallel-limit": 0,
     # IPv6 也会绕过代理做 DNS
     "network.dns.disableIPv6": True,
+    # HTTP/3 走 UDP，SOCKS 代理默认不带 UDP —— 关掉，别给它绕路的机会
+    "network.http.http3.enabled": False,
+    "network.http.altsvc.enabled": False,
+    "network.http.altsvc.oe": False,
 }
 
 NO_DIALOG_PREFS = {
