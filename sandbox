@@ -20,17 +20,21 @@
 
 命令
 ----
-    sandbox new <名字> --exit cox            建沙盒（出口可以是名字或 socks5h:// 地址）
-    sandbox open <名字>                      开窗口，手工注册
+    sandbox new <名字> [--exit 地址|direct]  新建槽位（不写出口 = 配置里的 exit）
+    sandbox ls [--json]                      列出槽位
+    sandbox status <名字> [--json]           看一个槽位（出口、种子、profile 大小）
+    sandbox start <名字> [--exit …]          启动窗口，手工注册（open 是别名）
     sandbox check <名字>                     无头自检（需要 xvfb）
-    sandbox list                             列出沙盒
-    sandbox doctor                           检查依赖和出口配置
+    sandbox set-exit <名字> <地址|direct>     改槽位的出口
+    sandbox rm <名字> [--force]              删除槽位（含 profile）
+    sandbox doctor                           检查环境和配置
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -280,7 +284,7 @@ def run(args, headless: bool) -> int:
     return launch(args.name, proxy, headless=headless, timeout=getattr(args, "timeout", 0))
 
 
-def cmd_open(args) -> int:
+def cmd_start(args) -> int:
     return run(args, headless=False)
 
 
@@ -288,17 +292,87 @@ def cmd_check(args) -> int:
     return run(args, headless=True)
 
 
-def cmd_list(args) -> int:
+def slots() -> list[dict]:
     if not ROOT.is_dir():
-        say("还没有沙盒")
-        return 0
-    say(f"{'名字':<16} {'出口':<24} {'出口 IP':<18} 创建时间")
+        return []
+    out = []
     for d in sorted(ROOT.iterdir()):
-        if not (d / "meta.json").is_file():
-            continue
-        m = json.loads((d / "meta.json").read_text(encoding="utf-8"))
-        say(f"{m.get('name', d.name):<16} {m.get('exit', '-'):<24} "
+        if (d / "meta.json").is_file():
+            out.append(json.loads((d / "meta.json").read_text(encoding="utf-8")))
+    return out
+
+
+def cmd_list(args) -> int:
+    rows = slots()
+    if getattr(args, "json", False):
+        print(json.dumps({"root": str(ROOT), "slots": rows}, ensure_ascii=False, indent=2))
+        return 0
+    if not rows:
+        say("还没有槽位（sandbox new <名字>）")
+        return 0
+    say(f"{'名字':<16} {'出口':<30} {'出口 IP':<18} 创建时间")
+    for m in rows:
+        say(f"{m.get('name', '-'):<16} {m.get('exit', '-'):<30} "
             f"{m.get('exit_ip', '-'):<18} {m.get('created_at', '-')}")
+    return 0
+
+
+def cmd_status(args) -> int:
+    meta = read_meta(args.name)
+    d = sandbox_dir(args.name)
+    profile = d / "profile"
+    seed = None
+    seed_file = profile / "seed.json"
+    if seed_file.is_file():
+        try:
+            seed = json.loads(seed_file.read_text(encoding="utf-8")).get("seed")
+        except (OSError, json.JSONDecodeError):
+            seed = None
+    size = 0
+    for path in profile.rglob("*") if profile.is_dir() else []:
+        try:
+            if path.is_file():
+                size += path.stat().st_size
+        except OSError:
+            pass
+    info = {**meta, "dir": str(d), "seed": seed, "profile_bytes": size}
+    if getattr(args, "json", False):
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        return 0
+    say(f"槽位      : {meta.get('name')}")
+    say(f"目录      : {d}")
+    say(f"出口      : {meta.get('exit', '-')}")
+    say(f"出口 IP   : {meta.get('exit_ip', '-')}")
+    say(f"指纹种子  : {seed if seed is not None else '-'}")
+    say(f"profile   : {size / 1024 / 1024:.1f} MB")
+    say(f"创建时间  : {meta.get('created_at', '-')}")
+    return 0
+
+
+def cmd_set_exit(args) -> int:
+    spec, _proxy = resolve_exit(args.exit, load_config())
+    meta = read_meta(args.name)
+    old = meta.get("exit")
+    meta["exit"] = spec
+    meta.pop("exit_ip", None)          # 换了出口，旧的 IP 记忆作废
+    write_meta(args.name, meta)
+    say(f"{args.name}: 出口 {old} → {spec}")
+    if spec == "direct":
+        say("         下次启动不设代理，走原生环境")
+    return 0
+
+
+def cmd_rm(args) -> int:
+    d = sandbox_dir(args.name)
+    if not d.is_dir():
+        die(f"没有这个槽位: {args.name}")
+    if not args.force:
+        answer = input(f"删除 {d}（含 profile / cookie）？输入 yes 确认: ").strip().lower()
+        if answer != "yes":
+            say("已取消")
+            return 1
+    shutil.rmtree(d)
+    say(f"已删除槽位 {args.name}")
     return 0
 
 
@@ -326,19 +400,35 @@ def main() -> int:
     add_exit_flags(p)
     p.set_defaults(func=cmd_new)
 
-    p = sub.add_parser("open", help="开窗口，手工注册")
+    p = sub.add_parser("start", aliases=["open"], help="启动窗口，手工注册")
     p.add_argument("name")
     add_exit_flags(p)
     p.add_argument("--timeout", type=int, default=0, help="多少秒后自动关闭（0 = 一直开着）")
-    p.set_defaults(func=cmd_open)
+    p.set_defaults(func=cmd_start)
 
     p = sub.add_parser("check", help="无头自检：出口 IP / WebRTC（需要 xvfb）")
     p.add_argument("name")
     add_exit_flags(p)
     p.set_defaults(func=cmd_check)
 
-    p = sub.add_parser("list", help="列出沙盒")
+    p = sub.add_parser("ls", aliases=["list"], help="列出槽位")
+    p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("status", help="看一个槽位")
+    p.add_argument("name")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("set-exit", help="改槽位的出口")
+    p.add_argument("name")
+    p.add_argument("exit", help="direct 或 socks5h://host:port")
+    p.set_defaults(func=cmd_set_exit)
+
+    p = sub.add_parser("rm", aliases=["remove"], help="删除槽位（含 profile）")
+    p.add_argument("name")
+    p.add_argument("--force", action="store_true", help="不确认，直接删")
+    p.set_defaults(func=cmd_rm)
 
     p = sub.add_parser("doctor", help="检查依赖和出口配置")
     p.set_defaults(func=cmd_doctor)

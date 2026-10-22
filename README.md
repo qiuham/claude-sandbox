@@ -3,6 +3,19 @@
 一个 Claude 注册/养号用的沙盒。一个沙盒 = 一个独立 profile + 一个固定出口 + 一份固定指纹。
 手工版给人在窗口里点，同一套脚本加 `--headless` 就能给自动化用。
 
+## 命令
+
+| 命令 | 作用 |
+|---|---|
+| `sandbox new <名字> [--exit 地址\|direct]` | 新建槽位 |
+| `sandbox ls [--json]`（别名 `list`） | 列出槽位 |
+| `sandbox status <名字> [--json]` | 槽位详情（出口、种子、profile 大小） |
+| `sandbox start <名字>`（别名 `open`） | 启动窗口，手工注册 |
+| `sandbox check <名字>` | 无头自检（出口 IP / WebRTC） |
+| `sandbox set-exit <名字> <地址\|direct>` | 改槽位出口 |
+| `sandbox rm <名字> [--force]` | 删除槽位（含 profile） |
+| `sandbox doctor` | 检查环境和配置 |
+
 ## 设计
 
 | 层 | 做法 |
@@ -43,13 +56,17 @@ python3 -m venv .venv
 .venv/bin/python -m invisible_playwright fetch      # 下载浏览器引擎（约 260 MB）
 ```
 
-2. 建沙盒、开窗口：
+2. 建槽位、启动、看状态：
 
 ```
 ./sandbox doctor
-./sandbox new demo                 # 有配置就走配置的出口，没有就 direct
-./sandbox new demo --exit direct   # 显式不用代理
-./sandbox open demo
+./sandbox new profile1                 # 有配置就走配置的出口，没有就 direct
+./sandbox new profile2 --exit direct    # 显式不用代理
+./sandbox ls                            # 列出所有槽位
+./sandbox status profile1               # 出口、种子、profile 大小
+./sandbox start profile1                # 启动窗口（open 是别名）
+./sandbox set-exit profile1 socks5h://127.0.0.1:7897
+./sandbox rm profile2                   # 删除前会要求输入 yes
 ```
 
 Windows 任务栏会出现一个浏览器窗口（WSLg）。用完直接关窗口，profile 会保留。
@@ -57,7 +74,7 @@ Windows 任务栏会出现一个浏览器窗口（WSLg）。用完直接关窗�
 3. 无头自检（需要 xvfb：`sudo apt install -y xvfb`）：
 
 ```
-./sandbox check demo
+./sandbox check profile1
 ```
 
 ## 本机 Clash 的注意点
