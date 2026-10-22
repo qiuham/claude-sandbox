@@ -13,6 +13,7 @@ from ccs import paths
 from ccs.browser import deps, process
 from ccs.browser.prefs import engine_class
 from ccs.errors import die, log_line, say
+from ccs.network import stun
 from ccs.sandbox import store
 
 if TYPE_CHECKING:
@@ -147,19 +148,24 @@ def close_session(bctx, profile: Path, cfg: dict) -> None:
         process.clear_lock_files(profile)
 
 
-def session_prefs(cfg: dict, proxy: str) -> dict:
-    """按出口决定 WebRTC 怎么办。
+def webrtc_declared_ip(proxy: str, exit_ip: str) -> str:
+    """要不要把 srflx 候选钉成出口 IP；返回空串表示不用管。
 
-    有 SOCKS5 代理时，Firefox 会把 STUN 的 UDP 也交给代理，
-    ICE 拿到的就是出口 IP —— 和真实用户一样，不用干预。
-    没有代理（或只有 HTTP 代理，UDP 过不去）时，STUN 会拿到真实公网 IP，
-    这时只允许代理候选：候选为空，ipleak 上看不到任何 IP。
+    有 SOCKS5 代理时，Firefox 会把 STUN 的 UDP 也交给代理，真实候选就是出口 IP。
+    direct 时先量一次 UDP 出口：
+      - 和 TCP 出口一样（例如 Clash TUN），真实候选本来就对，不用管；
+      - 不一样（系统代理只转 TCP）或者量不到，就声明成出口 IP，
+        页面看到的 WebRTC 地址和出口一致，不会漏出本机 IP。
     """
-    prefs = dict(cfg["browser"]["prefs"])
-    if not proxy or proxy.startswith(("http://", "https://")):
-        prefs["media.peerconnection.ice.proxy_only"] = True
-        prefs["media.peerconnection.ice.no_host"] = True
-    return prefs
+    if not exit_ip or exit_ip.startswith("("):
+        return ""
+    if proxy.startswith(("socks5://", "socks5h://")):
+        return ""
+    if not proxy:
+        udp_ip = stun.mapped_ip()
+        if udp_ip and udp_ip == exit_ip:
+            return ""
+    return exit_ip
 
 
 def _context_kwargs(profile: Path, *, headless: bool, proxy: str,
@@ -170,7 +176,7 @@ def _context_kwargs(profile: Path, *, headless: bool, proxy: str,
         "humanize": float(cfg.get("humanize_s") or 1.5),
         "locale": "auto",              # 按出口 IP 的地区选语言
         "profile_dir": str(profile),
-        "extra_prefs": session_prefs(cfg, proxy),
+        "extra_prefs": cfg["browser"]["prefs"],
     }
     if proxy:
         kw["proxy"] = {"server": proxy.replace("socks5h://", "socks5://")}
@@ -179,8 +185,8 @@ def _context_kwargs(profile: Path, *, headless: bool, proxy: str,
     return kw
 
 
-def open_session(name: str, proxy: str, cfg: dict, *,
-                 headless: bool, pin: dict | None) -> Session:
+def open_session(name: str, proxy: str, cfg: dict, *,  # noqa: PLR0913 - 启动参数就是这些，拆对象反而绕
+                 headless: bool, pin: dict | None, exit_ip: str = "") -> Session:
     engine = engine_class()
     profile = paths.profile_dir(name)
     profile.mkdir(parents=True, exist_ok=True)
@@ -193,6 +199,13 @@ def open_session(name: str, proxy: str, cfg: dict, *,
     # XWayland 下由 Firefox 自己画标题栏，不交给 WSLg 的窗口管理器，
     # 否则会套一圈白色边框。
     os.environ.setdefault("MOZ_GTK_TITLEBAR_DECORATION", "client")
+    # WebRTC：该声明就声明成出口 IP，不该声明就把上一个会话留下的值清掉
+    declared = webrtc_declared_ip(proxy, exit_ip)
+    if declared:
+        os.environ["STEALTHFOX_WEBRTC_PUBLIC_IP"] = declared
+        log_line(f"WebRTC  srflx 声明为 {declared}")
+    else:
+        os.environ.pop("STEALTHFOX_WEBRTC_PUBLIC_IP", None)
     kw = _context_kwargs(profile, headless=headless, proxy=proxy, pin=pin, cfg=cfg)
     fit_window = bool(cfg.get("fit_window", True))
     bctx, browser = open_browser(profile, engine, kw,

@@ -484,6 +484,7 @@ def _run_browser(args, proxy: str, cfg: dict, *, mode: str, exit_ip: str) -> int
         headless=(mode == "check"),
         pin=prefs.build_pin(cfg, store.read_meta(name).get("pin"),
                             store.read_meta(name).get("fonts")),
+        exit_ip=exit_ip,
     )
     try:
         trace = session.page.goto("https://api.ipify.org",

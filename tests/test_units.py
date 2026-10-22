@@ -18,7 +18,7 @@ sys.path.insert(0, str(SRC))
 
 from ccs import config, paths, report  # noqa: E402
 from ccs.browser import crash  # noqa: E402
-from ccs.browser.launcher import session_prefs  # noqa: E402
+from ccs.browser.launcher import webrtc_declared_ip  # noqa: E402
 from ccs.browser.tasks import (  # noqa: E402
     _parse_csv,
     _parse_prompt_file,
@@ -407,18 +407,26 @@ class DiscoverTests(unittest.TestCase):
             self.assertEqual(resolve_exit("", {"exit": "auto"}), ("direct", ""))
 
 
-class SessionPrefsTests(unittest.TestCase):
-    """WebRTC 按出口决定：SOCKS 放行（走代理），direct / HTTP 代理才关。"""
+class WebrtcDeclareTests(unittest.TestCase):
+    """WebRTC：SOCKS 交给引擎；UDP 和 TCP 一致就不管；不一致就声明出口 IP。"""
 
-    def test_socks_keeps_webrtc_native(self):
-        prefs = session_prefs(config.DEFAULT_CONFIG, "socks5h://127.0.0.1:7897")
-        self.assertNotIn("media.peerconnection.ice.proxy_only", prefs)
+    def test_socks_leaves_it_to_engine(self):
+        self.assertEqual(webrtc_declared_ip("socks5h://127.0.0.1:7897", "1.2.3.4"), "")
 
-    def test_direct_and_http_proxy_block(self):
-        for proxy in ("", "http://127.0.0.1:7890"):
-            prefs = session_prefs(config.DEFAULT_CONFIG, proxy)
-            self.assertTrue(prefs["media.peerconnection.ice.proxy_only"], proxy)
-            self.assertTrue(prefs["media.peerconnection.ice.no_host"], proxy)
+    def test_direct_same_udp_leaves_it_alone(self):
+        with mock.patch.object(stun, "mapped_ip", return_value="1.2.3.4"):
+            self.assertEqual(webrtc_declared_ip("", "1.2.3.4"), "")
+
+    def test_direct_different_udp_declares_exit(self):
+        with mock.patch.object(stun, "mapped_ip", return_value="5.6.7.8"):
+            self.assertEqual(webrtc_declared_ip("", "1.2.3.4"), "1.2.3.4")
+
+    def test_direct_unknown_udp_declares_exit(self):
+        with mock.patch.object(stun, "mapped_ip", return_value=""):
+            self.assertEqual(webrtc_declared_ip("", "1.2.3.4"), "1.2.3.4")
+
+    def test_http_proxy_declares_exit(self):
+        self.assertEqual(webrtc_declared_ip("http://127.0.0.1:7890", "1.2.3.4"), "1.2.3.4")
 
 
 class CrashReportTests(unittest.TestCase):
