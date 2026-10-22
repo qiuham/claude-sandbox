@@ -190,6 +190,9 @@ def open_session(name: str, proxy: str, cfg: dict, *,
     # WSLg 的 Wayland 合成器会断，Firefox 跟着以 SIGSEGV 退出
     # （Error reading events from display: Broken pipe）。走 XWayland 更稳。
     os.environ.setdefault("MOZ_ENABLE_WAYLAND", "0")
+    # XWayland 下由 Firefox 自己画标题栏，不交给 WSLg 的窗口管理器，
+    # 否则会套一圈白色边框。
+    os.environ.setdefault("MOZ_GTK_TITLEBAR_DECORATION", "client")
     kw = _context_kwargs(profile, headless=headless, proxy=proxy, pin=pin, cfg=cfg)
     fit_window = bool(cfg.get("fit_window", True))
     bctx, browser = open_browser(profile, engine, kw,

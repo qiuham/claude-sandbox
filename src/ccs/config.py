@@ -52,6 +52,8 @@ SANDBOX_PREFS = {
     "network.http.http3.enabled": False,
     "network.http.altsvc.enabled": False,
     "network.http.altsvc.oe": False,
+    # X11/XWayland 下让窗口圆角透明，否则四角是一圈白边
+    "mozilla.widget.use-argb-visuals": True,
 }
 
 NO_DIALOG_PREFS = {
