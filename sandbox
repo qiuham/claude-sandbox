@@ -49,18 +49,7 @@ CONFIG_FILE = Path(os.path.expanduser(
     os.environ.get("SANDBOX_CONFIG", "~/.config/claude-sandbox/config.json")))
 ROOT = Path(os.path.expanduser(os.environ.get("SANDBOX_ROOT", "~/sandboxes"))).resolve()
 
-DEFAULT_CONFIG = {
-    "exits": {
-        # 任何能上网的机器都能用：本机 Clash / mihomo 的 mixed 端口
-        "local": {"label": "本机 Clash", "proxy": "socks5h://127.0.0.1:7897"},
-        # 原生环境：**不设任何代理**。出口取决于这台机器自己有没有 TUN/透明代理。
-        "direct": {"label": "原生环境（无代理）", "direct": True},
-        # 在 46.2 上跑（容器/宿主机）时，显式连 mihomo 的端口
-        "cox-46.2": {"label": "美国 Cox（46.2 的 mihomo）", "proxy": "socks5h://172.18.0.1:7871"},
-        "wave-46.2": {"label": "美国 Wave（46.2 的 mihomo）", "proxy": "socks5h://172.18.0.1:7872"},
-        "att-46.2": {"label": "美国 AT&T（46.2 的 mihomo）", "proxy": "socks5h://172.18.0.1:7873"},
-    }
-}
+DEFAULT_CONFIG = {}   # 没配置 = direct；配了 default_exit 就走它
 
 NO_DIALOG_PREFS = {
     "browser.sessionstore.resume_from_crash": False,
@@ -106,12 +95,9 @@ def load_config() -> dict:
             user = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             die(f"配置文件读不了: {CONFIG_FILE}: {exc}")
-        for name, spec in (user.get("exits") or {}).items():
-            merged = dict(cfg["exits"].get(name) or {})
-            merged.update(spec)
-            cfg["exits"][name] = merged
-        if user.get("default_exit"):
-            cfg["default_exit"] = user["default_exit"]
+        value = str(user.get("default_exit") or "").strip()
+        if value:
+            cfg["default_exit"] = value
     return cfg
 
 
@@ -139,21 +125,19 @@ def is_proxy_spec(spec: str) -> bool:
     return str(spec).startswith(("socks5://", "socks5h://", "http://", "https://"))
 
 
-def resolve_proxy(spec: str, cfg: dict) -> str:
-    """出口 spec → 一个 socks5h/http 地址。名字会查配置；地址直接用。"""
-    spec = str(spec or "")
+def resolve_exit(spec: str, cfg: dict) -> tuple[str, str]:
+    """出口 spec → (规范化后的 spec, 代理地址)。地址为空串表示 direct。
+
+    规则：没指定就用配置里的 default_exit；再没有就是 direct。
+    """
+    spec = str(spec or "").strip()
     if not spec:
-        die("没有指定出口（--exit <名字|地址>）")
+        spec = str(cfg.get("default_exit") or "direct").strip() or "direct"
+    if spec == "direct":
+        return "direct", ""
     if is_proxy_spec(spec):
-        return spec
-    entry = (cfg.get("exits") or {}).get(spec)
-    if not entry:
-        die(f"未知出口 {spec}；可选: {', '.join(sorted(cfg.get('exits') or {}))}")
-    if entry.get("direct"):
-        return ""              # 空串 = 不用代理，走原生环境
-    if entry.get("proxy"):
-        return entry["proxy"]
-    die(f"出口 {spec} 既没有 proxy 也没有 direct 配置")
+        return spec, spec
+    die(f"出口只认 direct 或代理地址（socks5h://、http://），收到 {spec!r}")
 
 
 def curl_exit(proxy: str) -> str:
@@ -171,9 +155,9 @@ def curl_exit(proxy: str) -> str:
 
 def preflight(name: str, spec: str, label: str, proxy: str) -> str:
     if proxy:
-        say(f"出口    : {spec}（{label or '-'}）")
+        say(f"出口    : {spec}")
     else:
-        say(f"出口    : {spec}（{label or '原生环境'}，不设代理）")
+        say(f"出口    : direct（不设代理，走原生环境）")
         say("         出口 IP 由这台机器的 TUN/透明代理决定；沙盒不替你设代理")
     ip = curl_exit(proxy)
     say(f"出口 IP : {ip}")
@@ -253,25 +237,23 @@ def launch(name: str, proxy: str, headless: bool, timeout: int = 0) -> int:
 
 
 def pick_exit(args, meta: dict | None = None) -> str:
-    if getattr(args, "proxy", None):
-        return args.proxy
-    if getattr(args, "exit", None):
-        return args.exit
-    if meta and meta.get("exit"):
-        return meta["exit"]
-    cfg = load_config()
-    if cfg.get("default_exit"):
-        return cfg["default_exit"]
-    die("要指定出口：--exit <名字> 或 --exit socks5h://host:port")
+    """命令行优先，其次沙盒记录；都没有就空串（resolve_exit 会兜底成配置/direct）。"""
+    for value in (getattr(args, "proxy", None), getattr(args, "exit", None)):
+        if value:
+            return value
+    spec = str((meta or {}).get("exit") or "")
+    # 旧版本存过名字（cox 之类），现在只认 direct/地址；失效就当没记录。
+    if spec and spec != "direct" and not is_proxy_spec(spec):
+        say(f"注意    : 沙盒记录的出口 {spec!r} 已失效，改用默认出口")
+        return ""
+    return spec
 
 
 def cmd_new(args) -> int:
     if args.name in {".", ".."} or "/" in args.name or "\\" in args.name:
         die("沙盒名字不能带路径分隔符")
     cfg = load_config()
-    spec = pick_exit(args)
-    if not is_proxy_spec(spec) and spec not in (cfg.get("exits") or {}):
-        die(f"未知出口 {spec}；可选: {', '.join(sorted(cfg.get('exits') or {}))}")
+    spec, _proxy = resolve_exit(pick_exit(args), cfg)
     d = sandbox_dir(args.name)
     if d.exists():
         die(f"{d} 已存在")
@@ -291,9 +273,8 @@ def run(args, headless: bool) -> int:
     cfg = load_config()
     meta = read_meta(args.name)
     spec = pick_exit(args, meta)
-    entry = (cfg.get("exits") or {}).get(spec) or {}
-    proxy = resolve_proxy(spec, cfg)          # "" 表示不用代理
-    ip = preflight(args.name, spec, entry.get("label", ""), proxy)
+    spec, proxy = resolve_exit(pick_exit(args, meta), cfg)   # proxy 为空 = direct
+    ip = preflight(args.name, spec, "", proxy)
     if ip.startswith("("):
         die("出口不通，先别继续")
     return launch(args.name, proxy, headless=headless, timeout=getattr(args, "timeout", 0))
@@ -327,15 +308,8 @@ def cmd_doctor(args) -> int:
     say(f"配置文件  : {CONFIG_FILE} {'有' if CONFIG_FILE.is_file() else '无（用内置默认）'}")
     say(f"venv      : {'有' if _VENV_PY.is_file() else '没有 .venv'}")
     say("")
-    say(f"{'出口名':<14} {'形态':<8} 说明")
-    for name, entry in sorted((cfg.get("exits") or {}).items()):
-        if entry.get("direct"):
-            kind, detail = "direct", "不用代理，走原生环境"
-        elif entry.get("proxy"):
-            kind, detail = "proxy", entry["proxy"]
-        else:
-            kind, detail = "?", "（没有 proxy / direct 配置）"
-        say(f"{name:<14} {kind:<8} {entry.get('label', '')} — {detail}")
+    default = str(cfg.get("default_exit") or "direct")
+    say(f"默认出口  : {default}" + ("（没配置 = direct）" if default == "direct" else ""))
     return 0
 
 

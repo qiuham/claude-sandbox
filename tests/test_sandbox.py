@@ -10,74 +10,66 @@ CLI = Path(__file__).resolve().parent.parent / "sandbox"
 
 
 class SandboxCliTests(unittest.TestCase):
-    def run_cli(self, *args, root: Path, password: Path | None = None):
+    def run_cli(self, *args, root: Path, config: Path | None = None):
         env = dict(os.environ, SANDBOX_ROOT=str(root))
-        if password is not None:
-            env["SANDBOX_PASSWORD_FILE"] = str(password)
+        env["SANDBOX_CONFIG"] = str(config) if config else str(Path(root).parent / "nope.json")
         return subprocess.run([str(CLI), *args], capture_output=True, text=True,
                               env=env, timeout=30)
 
-    def test_new_then_list(self):
+    def write_config(self, path: Path, default_exit: str) -> Path:
+        path.write_text(json.dumps({"default_exit": default_exit}), encoding="utf-8")
+        return path
+
+    def test_no_config_means_direct(self):
+        """不配就是 direct。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
-            r = self.run_cli("new", "demo", "--exit", "cox-46.2", root=root)
+            r = self.run_cli("new", "demo", root=root)
             self.assertEqual(r.returncode, 0, r.stderr)
             meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
-            self.assertEqual(meta["exit"], "cox-46.2")
-            self.assertTrue((root / "demo" / "profile" / "seed.json").is_file())
+            self.assertEqual(meta["exit"], "direct")
 
-            r = self.run_cli("list", root=root)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("demo", r.stdout)
-            self.assertIn("cox-46.2", r.stdout)
-
-    def test_new_rejects_unknown_exit(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            r = self.run_cli("new", "x", "--exit", "nope", root=Path(tmp))
-            self.assertNotEqual(r.returncode, 0)
-
-    def test_new_rejects_duplicate(self):
+    def test_config_sets_default_exit(self):
+        """配了 default_exit，新沙盒默认走它。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
-            self.assertEqual(self.run_cli("new", "demo", "--exit", "cox-46.2", root=root).returncode, 0)
-            r = self.run_cli("new", "demo", "--exit", "cox-46.2", root=root)
-            self.assertNotEqual(r.returncode, 0)
-            self.assertIn("已存在", r.stderr)
-
-    def test_new_accepts_proxy_url_and_keeps_it(self):
-        """出口可以直接给地址：部署在任何地方都能用。"""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "sandboxes"
-            r = self.run_cli("new", "demo", "--exit", "socks5h://127.0.0.1:7897", root=root)
+            cfg = self.write_config(Path(tmp) / "config.json", "socks5h://127.0.0.1:7897")
+            r = self.run_cli("new", "demo", root=root, config=cfg)
             self.assertEqual(r.returncode, 0, r.stderr)
             meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
             self.assertEqual(meta["exit"], "socks5h://127.0.0.1:7897")
 
-    def test_direct_exit_means_no_proxy(self):
-        """direct = 完全不用代理；doctor 里要能看到这种形态。"""
+            r = self.run_cli("doctor", root=root, config=cfg)
+            self.assertIn("socks5h://127.0.0.1:7897", r.stdout)
+
+    def test_explicit_exit_overrides_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
-            r = self.run_cli("new", "demo", "--exit", "direct", root=root)
+            cfg = self.write_config(Path(tmp) / "config.json", "socks5h://127.0.0.1:7897")
+            r = self.run_cli("new", "demo", "--exit", "direct", root=root, config=cfg)
             self.assertEqual(r.returncode, 0, r.stderr)
             meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
             self.assertEqual(meta["exit"], "direct")
-            r = self.run_cli("doctor", root=root)
-            self.assertIn("direct", r.stdout)
-            self.assertIn("不用代理", r.stdout)
 
-    def test_config_file_adds_exits(self):
-        """配置文件里能加自己的出口（proxy 形态），doctor 要列出来。"""
+    def test_rejects_unknown_exit(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cfg = Path(tmp) / "config.json"
-            cfg.write_text(json.dumps({"exits": {
-                "mine": {"label": "自家代理", "proxy": "socks5h://10.0.0.1:1080"}}}),
-                encoding="utf-8")
-            env = dict(os.environ, SANDBOX_CONFIG=str(cfg))
-            r = subprocess.run([str(CLI), "doctor"], capture_output=True, text=True,
-                               env=env, timeout=30)
+            r = self.run_cli("new", "x", "--exit", "cox", root=Path(tmp) / "s")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("direct", r.stderr)
+
+    def test_new_rejects_duplicate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "sandboxes"
+            self.assertEqual(self.run_cli("new", "demo", root=root).returncode, 0)
+            r = self.run_cli("new", "demo", root=root)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("已存在", r.stderr)
+
+    def test_doctor_says_direct_when_unconfigured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.json")
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("mine", r.stdout)
-            self.assertIn("10.0.0.1:1080", r.stdout)
+            self.assertIn("没配置 = direct", r.stdout)
 
 
 if __name__ == "__main__":
