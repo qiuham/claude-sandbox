@@ -103,13 +103,28 @@ new Promise((res) => {
 """
 
 
+LOG_PATH: Path | None = None   # 由 run() 设成 ~/sandboxes/<名字>/ccs.log
+
+
+def log_line(msg: str) -> None:
+    if LOG_PATH is None:
+        return
+    try:
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except OSError:
+        pass
+
+
 def die(msg: str) -> None:
     print(f"错误: {msg}", file=sys.stderr)
+    log_line(f"错误: {msg}")
     raise SystemExit(1)
 
 
 def say(msg: str = "") -> None:
     print(msg, flush=True)
+    log_line(msg)
 
 
 def load_config() -> dict:
@@ -234,6 +249,13 @@ def launch(name: str, proxy: str, headless: bool, timeout: int = 0) -> int:
         ctx = browser.contexts[0] if hasattr(browser, "contexts") and browser.contexts else browser
         page = ctx.new_page()
         page.set_default_timeout(45000)
+        # 浏览器这边的错误也写进同一份日志：控制台 error 和未捕获异常
+        try:
+            page.on("console", lambda m: log_line(f"[console:{m.type}] {m.text}")
+                    if m.type in ("error", "warning") else None)
+            page.on("pageerror", lambda exc: log_line(f"[pageerror] {exc}"))
+        except Exception as exc:      # noqa: BLE001 - 旧引擎没有这组事件也不能影响启动
+            log_line(f"[warn] 注册浏览器日志失败: {exc}")
         trace = page.goto("https://api.ipify.org", timeout=90000)
         say(f"页面加载完成（HTTP {trace.status if trace else '?'}）")
         if headless:
@@ -294,8 +316,11 @@ def cmd_new(args) -> int:
 
 
 def run(args, headless: bool) -> int:
+    global LOG_PATH
     cfg = load_config()
     meta = read_meta(args.name)
+    LOG_PATH = sandbox_dir(args.name) / "ccs.log"
+    log_line(f"=== {'check' if headless else 'start'} {args.name} ===")
     spec = pick_exit(args, meta)
     spec, proxy = resolve_exit(pick_exit(args, meta), cfg)   # proxy 为空 = direct
     ip = preflight(args.name, spec, "", proxy)
@@ -396,6 +421,17 @@ def cmd_rm(args) -> int:
     return 0
 
 
+def cmd_log(args) -> int:
+    f = sandbox_dir(args.name) / "ccs.log"
+    if not f.is_file():
+        say("还没有日志（启动一次后才会写）")
+        return 0
+    lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+    for line in lines[-args.lines:]:
+        print(line)
+    return 0
+
+
 def cmd_doctor(args) -> int:
     cfg = load_config()
     say(f"沙盒目录  : {ROOT}")
@@ -449,6 +485,11 @@ def main() -> int:
     p.add_argument("name")
     p.add_argument("--force", action="store_true", help="不确认，直接删")
     p.set_defaults(func=cmd_rm)
+
+    p = sub.add_parser("log", help="看沙盒日志（会话输出 + 浏览器错误）")
+    p.add_argument("name")
+    p.add_argument("--lines", type=int, default=50)
+    p.set_defaults(func=cmd_log)
 
     p = sub.add_parser("doctor", help="检查依赖和出口配置")
     p.set_defaults(func=cmd_doctor)
