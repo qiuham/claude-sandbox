@@ -44,5 +44,5 @@ def engine_class():
     try:
         from invisible_playwright import InvisiblePlaywright  # noqa: PLC0415 - 延迟导入，避免没装引擎时连 CLI 都起不来
     except ImportError:
-        die("没装 invisible_playwright：在本仓库目录执行 .venv/bin/pip install -r requirements.txt")
+        die("没装引擎：在仓库目录执行 make setup")
     return InvisiblePlaywright

@@ -1,2 +1,0 @@
-# 浏览器引擎（自带一份改过的 Firefox + 指纹能力）
-invisible-playwright==0.35.10

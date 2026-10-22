@@ -48,14 +48,17 @@ exit = "socks5h://127.0.0.1:7897"
 
 ## 手工版（WSL / 本机）
 
-1. 装依赖并安装命令：
+1. 一键安装（需要 [uv](https://docs.astral.sh/uv/)）：
 
 ```
-make install                       # 把 ccs 软链到 ~/.local/bin
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python -m invisible_playwright fetch      # 下载浏览器引擎（约 260 MB）
+make setup
 ```
+
+它做四件事：`uv sync` 建环境装依赖 → 下载浏览器引擎（约 260 MB）→
+把 `ccs` 软链到 `~/.local/bin` → 跑一次 `ccs doctor` 自检。
+
+引擎版本钉在 `pyproject.toml` 里（`invisible-playwright==0.35.10`）。
+**指纹一致依赖引擎版本一致**，对方装同样版本，同一个 seed 才能还原同样的指纹。
 
 2. 建沙盒、启动、看状态：
 
