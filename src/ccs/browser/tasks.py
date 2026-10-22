@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import ipaddress
 import json
 import random
 import shutil
@@ -18,19 +19,20 @@ from ccs.network import DnsRelay, pick_exit, preflight, resolve_exit
 from ccs.sandbox import store
 from ccs.sandbox.lifecycle import config_timeouts, load_runtime
 
+# 注意：整段不能以分号结尾。Playwright 会把表达式包进括号，末尾分号会变成语法错误。
 WEBRTC_JS = """
 new Promise((res) => {
   const out = [];
   const pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
   pc.createDataChannel('x');
   pc.onicecandidate = (e) => {
-    if (!e.candidate) { res(out); return; }
-    const m = e.candidate.candidate.match(/([0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,}/i);
-    if (m) out.push(m[0]);
+    const c = e.candidate && e.candidate.candidate;
+    if (!c) { res(out); return; }
+    out.push(c);
   };
   pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => res(out));
   setTimeout(() => res(out), 8000);
-});
+})
 """
 
 HARVEST_JS = """
@@ -216,11 +218,38 @@ def do_warmup(page, prompt: str, cfg: dict) -> str:
     return "ok" if _wait_for_growth(page, before, cfg) else "no_reply"
 
 
-def _headless_check(page, cfg: dict) -> int:
+def webrtc_public_ips(candidates: list[str]) -> list[str]:
+    """候选里的公网地址。mDNS 名字（*.local）和私有地址都不算。"""
+    found: list[str] = []
+    for line in candidates:
+        for token in line.split():
+            try:
+                addr = ipaddress.ip_address(token)
+            except ValueError:
+                continue
+            if addr.is_global and str(addr) not in found:
+                found.append(str(addr))
+    return found
+
+
+def webrtc_verdict(candidates: list[str], exit_ip: str) -> str:
+    """一句话结论：没拿到公网 IP / 只有出口 IP / 有别的公网 IP（泄露）。"""
+    ips = webrtc_public_ips(candidates)
+    if not ips:
+        return "没拿到公网 IP（不泄露）"
+    leaked = [ip for ip in ips if ip != exit_ip]
+    if leaked:
+        return f"泄露！候选里有 {', '.join(leaked)}，和出口 {exit_ip} 不同"
+    return "只有出口 IP，正常"
+
+
+def _headless_check(page, cfg: dict, exit_ip: str) -> int:
     say(f"页面出口 IP : {page.inner_text('body').strip()}")
     try:
         page.goto("https://www.cloudflare.com/", timeout=_timeouts(cfg)["goto_ms"])
-        say(f"WebRTC 候选 : {json.dumps(page.evaluate(WEBRTC_JS))}")
+        candidates = page.evaluate(WEBRTC_JS)
+        say(f"WebRTC 候选 : {json.dumps(candidates, ensure_ascii=False)}")
+        say(f"WebRTC 结论 : {webrtc_verdict(candidates, exit_ip)}")
     except Exception as exc:  # noqa: BLE001 - WebRTC 检测失败只提示，不影响自检退出
         say(f"WebRTC 检测失败: {exc}")
     return 0
@@ -435,7 +464,7 @@ def wait_loop(session, name: str, timeout: int, cfg: dict) -> int:
         time.sleep(t["run_sleep_s"])
 
 
-def _run_browser(args, proxy: str, cfg: dict, *, mode: str) -> int:
+def _run_browser(args, proxy: str, cfg: dict, *, mode: str, exit_ip: str) -> int:
     name = args.name
     session = launcher.open_session(
         name, proxy, cfg,
@@ -448,7 +477,7 @@ def _run_browser(args, proxy: str, cfg: dict, *, mode: str) -> int:
                                   timeout=_timeouts(cfg)["goto_ms"])
         say(f"页面加载完成（HTTP {trace.status if trace else '?'}）")
         if mode == "check":
-            return _headless_check(session.page, cfg)
+            return _headless_check(session.page, cfg, exit_ip)
         launcher.open_claude(session.page, cfg)
         if mode == "refresh":
             return refresh_flow(session.page, name)
@@ -489,7 +518,7 @@ def run(args, *, mode: str) -> int:
             die("出口不通，先别继续")
         if mode == "check" and not _has_xvfb():
             die("headless 需要 Xvfb：sudo apt install -y xvfb")
-        return _run_browser(args, proxy, cfg, mode=mode)
+        return _run_browser(args, proxy, cfg, mode=mode, exit_ip=ip)
     finally:
         if relay:
             relay.stop()

@@ -22,6 +22,8 @@ from ccs.browser.tasks import (  # noqa: E402
     _pick_prompt,
     _read_prompt_dir,
     do_warmup,
+    webrtc_public_ips,
+    webrtc_verdict,
 )
 from ccs.network.dns_relay import DnsRelay  # noqa: E402
 from ccs.network.doh import ATYP_DOMAIN, DohClient  # noqa: E402
@@ -346,6 +348,26 @@ class DepsTests(unittest.TestCase):
         with mock.patch.object(deps, "missing", return_value=[]):
             self.assertEqual(deps.hint(), "")
             self.assertEqual(deps.packages([]), [])
+
+
+class WebRtcTests(unittest.TestCase):
+    """WebRTC 判断：mDNS 和私有地址不算，公网地址和出口比。"""
+
+    def test_public_ips_only(self):
+        cands = [
+            "candidate:0 1 UDP 2122 abc.local 47243 typ host",
+            "candidate:1 1 UDP 1686 104.202.107.35 58467 typ srflx",
+            "candidate:2 1 TCP 2105 192.168.1.7 9 typ host",
+            "candidate:3 1 UDP 1686 2001:4860::1 58467 typ srflx",
+        ]
+        self.assertEqual(webrtc_public_ips(cands), ["104.202.107.35", "2001:4860::1"])
+
+    def test_verdicts(self):
+        self.assertEqual(webrtc_verdict([], "104.202.107.35"), "没拿到公网 IP（不泄露）")
+        same = ["candidate:1 1 UDP 1686 104.202.107.35 58467 typ srflx"]
+        self.assertEqual(webrtc_verdict(same, "104.202.107.35"), "只有出口 IP，正常")
+        leak = ["candidate:1 1 UDP 1686 1.2.3.4 58467 typ srflx"]
+        self.assertIn("泄露", webrtc_verdict(leak, "104.202.107.35"))
 
 
 class CreatedFormatTests(unittest.TestCase):
