@@ -167,7 +167,8 @@ def cmd_set_exit(args) -> int:
 
 def cmd_export(args) -> int:
     cfg = load_runtime()
-    output = Path(args.output) if args.output else Path(f"{args.name}.bundle.tar.gz")
+    output = (Path(args.output).expanduser() if args.output
+              else Path.cwd() / f"{args.name}.bundle.tar.gz")
     pin = build_pin(cfg)
     pin.pop("font.manifest", None)      # 清单由字体模式在本地重新生成，不写进包里
     return bundle.export_bundle(args.name, output, cfg, pin)

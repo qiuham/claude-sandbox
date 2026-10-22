@@ -83,7 +83,7 @@ def export_bundle(name: str, output: Path, cfg: dict, pin: dict) -> int:
                 tar.add(tmpdir / item, arcname=item)
 
     size = output.stat().st_size
-    say(f"已导出: {output}（{size / 1024:.1f} KB，{kept} 条 cookie）")
+    say(f"已导出: {output.resolve()}（{size / 1024:.1f} KB，{kept} 条 cookie）")
     say(f"账号    : {account.get('email') or '-'}")
     say("注意    : 包里含 sessionKey，等于把这个号的登录权一起给出去了")
     return 0
