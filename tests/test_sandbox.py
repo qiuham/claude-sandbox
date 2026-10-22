@@ -66,7 +66,7 @@ class SandboxCliTests(unittest.TestCase):
             self.assertIn("已存在", r.stderr)
 
     def test_status_and_set_exit(self):
-        """status 看槽位；set-exit 改出口（并清掉旧的出口 IP 记忆）。"""
+        """status 看沙盒；set-exit 改出口（并清掉旧的出口 IP 记忆）。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
             self.assertEqual(self.run_cli("new", "t1", root=root).returncode, 0)

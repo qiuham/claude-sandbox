@@ -20,13 +20,13 @@
 
 命令
 ----
-    sandbox new <名字> [--exit 地址|direct]  新建槽位（不写出口 = 配置里的 exit）
-    sandbox ls [--json]                      列出槽位
-    sandbox status <名字> [--json]           看一个槽位（出口、种子、profile 大小）
+    sandbox new <名字> [--exit 地址|direct]  新建沙盒（不写出口 = 配置里的 exit）
+    sandbox ls [--json]                      列出沙盒
+    sandbox status <名字> [--json]           看一个沙盒（出口、种子、profile 大小）
     sandbox start <名字> [--exit …]          启动窗口，手工注册（open 是别名）
     sandbox check <名字>                     无头自检（需要 xvfb）
-    sandbox set-exit <名字> <地址|direct>     改槽位的出口
-    sandbox rm <名字> [--force]              删除槽位（含 profile）
+    sandbox set-exit <名字> <地址|direct>     改沙盒的出口
+    sandbox rm <名字> [--force]              删除沙盒（含 profile）
     sandbox doctor                           检查环境和配置
 """
 from __future__ import annotations
@@ -308,7 +308,7 @@ def cmd_list(args) -> int:
         print(json.dumps({"root": str(ROOT), "slots": rows}, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        say("还没有槽位（sandbox new <名字>）")
+        say("还没有沙盒（sandbox new <名字>）")
         return 0
     say(f"{'名字':<16} {'出口':<30} {'出口 IP':<18} 创建时间")
     for m in rows:
@@ -339,10 +339,10 @@ def cmd_status(args) -> int:
     if getattr(args, "json", False):
         print(json.dumps(info, ensure_ascii=False, indent=2))
         return 0
-    say(f"槽位      : {meta.get('name')}")
+    say(f"名称      : {meta.get('name')}")
     say(f"目录      : {d}")
     say(f"出口      : {meta.get('exit', '-')}")
-    say(f"出口 IP   : {meta.get('exit_ip', '-')}")
+    say(f"出口 IP   : {meta.get('exit_ip') or "-（启动一次后记录）"}")
     say(f"指纹种子  : {seed if seed is not None else '-'}")
     say(f"profile   : {size / 1024 / 1024:.1f} MB")
     say(f"创建时间  : {meta.get('created_at', '-')}")
@@ -365,14 +365,14 @@ def cmd_set_exit(args) -> int:
 def cmd_rm(args) -> int:
     d = sandbox_dir(args.name)
     if not d.is_dir():
-        die(f"没有这个槽位: {args.name}")
+        die(f"没有这个沙盒: {args.name}")
     if not args.force:
         answer = input(f"删除 {d}（含 profile / cookie）？输入 yes 确认: ").strip().lower()
         if answer != "yes":
             say("已取消")
             return 1
     shutil.rmtree(d)
-    say(f"已删除槽位 {args.name}")
+    say(f"已删除沙盒 {args.name}")
     return 0
 
 
@@ -411,21 +411,21 @@ def main() -> int:
     add_exit_flags(p)
     p.set_defaults(func=cmd_check)
 
-    p = sub.add_parser("ls", aliases=["list"], help="列出槽位")
+    p = sub.add_parser("ls", aliases=["list"], help="列出沙盒")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_list)
 
-    p = sub.add_parser("status", help="看一个槽位")
+    p = sub.add_parser("status", help="看一个沙盒")
     p.add_argument("name")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_status)
 
-    p = sub.add_parser("set-exit", help="改槽位的出口")
+    p = sub.add_parser("set-exit", help="改沙盒的出口")
     p.add_argument("name")
     p.add_argument("exit", help="direct 或 socks5h://host:port")
     p.set_defaults(func=cmd_set_exit)
 
-    p = sub.add_parser("rm", aliases=["remove"], help="删除槽位（含 profile）")
+    p = sub.add_parser("rm", aliases=["remove"], help="删除沙盒（含 profile）")
     p.add_argument("name")
     p.add_argument("--force", action="store_true", help="不确认，直接删")
     p.set_defaults(func=cmd_rm)
