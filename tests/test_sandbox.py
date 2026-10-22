@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-CLI = Path(__file__).resolve().parent.parent / "sandbox"
+CLI = Path(__file__).resolve().parent.parent / "ccs"
 
 
 class SandboxCliTests(unittest.TestCase):

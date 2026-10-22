@@ -12,9 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         x11vnc novnc websockify \
     && rm -rf /var/lib/apt/lists/*
 
-COPY sandbox /usr/local/bin/sandbox
+COPY ccs /usr/local/bin/ccs
 COPY docker/entrypoint.sh /usr/local/bin/sandbox-entrypoint
-RUN chmod 755 /usr/local/bin/sandbox /usr/local/bin/sandbox-entrypoint \
+RUN chmod 755 /usr/local/bin/ccs /usr/local/bin/sandbox-entrypoint \
     && mkdir -p /data && chown 1000:1000 /data
 
 ENV SANDBOX_ROOT=/data \
