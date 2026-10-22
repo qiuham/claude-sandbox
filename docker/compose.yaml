@@ -1,20 +1,25 @@
-# 在 46.2 上跑：
-#   docker compose up -d --build
-# 然后在 Windows/WSL 里开 SSH 隧道：
-#   ssh -L 6080:127.0.0.1:6080 root@64.83.46.2
-# 浏览器打开 http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
+# 用法：
+#   CCS_EXIT=socks5h://172.17.0.1:7897 docker compose -f docker/compose.yaml up --build
+#
+# 打开 http://localhost:6080/vnc.html 就能看到浏览器窗口。
+# 容器里的 127.0.0.1 不是宿主机的代理，出口要用宿主机在容器网桥里的地址
+# （Linux 默认 172.17.0.1，Docker Desktop 用 host.docker.internal）。
+
 services:
   sandbox:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: claude-sandbox:latest
+    image: claude-sandbox:local
     environment:
-      SANDBOX_PROFILE: ${SANDBOX_PROFILE:-demo}
-      SANDBOX_EXIT: ${SANDBOX_EXIT:-socks5h://172.18.0.1:7871}
-    volumes:
-      - ./data:/data
+      CCS_NAME: ${CCS_NAME:-sandbox}
+      CCS_EXIT: ${CCS_EXIT:-}
+      CCS_SCREEN: ${CCS_SCREEN:-2560x1440x24}
     ports:
-      - "127.0.0.1:6080:6080"    # 只绑本机，外部经 SSH 隧道访问
-    shm_size: 512m
+      - "6080:6080"
+    volumes:
+      # 账号数据放在宿主机，容器重建不丢
+      - ${HOME}/sandboxes:/home/sandbox/sandboxes
+      - ${HOME}/.config/claude-sandbox:/home/sandbox/.config/claude-sandbox
+    shm_size: 1gb
     restart: unless-stopped

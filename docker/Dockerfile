@@ -1,25 +1,33 @@
-# 沙盒镜像：容器里跑浏览器窗口，通过 noVNC 用网页操作。
+# 沙盒镜像：容器里跑 Firefox 窗口，用浏览器打开 noVNC 操作。
 #
-# 基础镜像用池子的 worker 镜像：里面已经有权改版 Firefox（invisible_playwright）、
-# 浏览器引擎和 Xvfb，这里只补 VNC 和沙盒脚本。
-# 注意：本机 docker 拉不到 docker.io 的基础镜像，所以默认用本地已有的 worker 镜像；
-# 换机器构建时把 BASE 指到能拉到的等价镜像，或先 docker load 一个 worker 镜像。
-ARG BASE=accountpool-worker:20261017-r31
-FROM ${BASE}
+# 不依赖内部镜像。基础镜像用公开的 python:3.13-slim，依赖、引擎、系统库
+# 全部交给仓库自己的 install.sh，不维护第二份安装逻辑。
 
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        x11vnc novnc websockify \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.13-slim
 
-COPY ccs /usr/local/bin/ccs
-COPY src /usr/local/bin/src
-COPY docker/entrypoint.sh /usr/local/bin/sandbox-entrypoint
-RUN chmod 755 /usr/local/bin/ccs /usr/local/bin/sandbox-entrypoint \
-    && mkdir -p /data && chown 1000:1000 /data
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    DISPLAY=:99 \
+    PATH=/home/sandbox/.local/bin:${PATH}
 
-ENV SANDBOX_ROOT=/data \
-    SANDBOX_PROFILE=demo \
-    SANDBOX_EXIT=socks5h://172.18.0.1:7871
+# Xvfb 提供虚拟屏幕，x11vnc + noVNC 把屏幕搬到浏览器里
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl procps sudo \
+        xvfb x11vnc novnc websockify \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash sandbox \
+    && printf 'sandbox ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/sandbox \
+    && chmod 0440 /etc/sudoers.d/sandbox
+
+USER sandbox
+WORKDIR /home/sandbox/app
+
+COPY --chown=sandbox:sandbox . .
+
+# install.sh --auto：装 uv、依赖、浏览器引擎，缺的系统库直接 apt 装
+RUN ./install.sh --auto --no-link
+
 EXPOSE 6080
-ENTRYPOINT ["sandbox-entrypoint"]
+
+ENTRYPOINT ["/home/sandbox/app/docker/entrypoint.sh"]

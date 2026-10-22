@@ -1,22 +1,42 @@
-#!/bin/sh
-# 沙盒容器入口：虚拟屏幕 + x11vnc + noVNC，然后把浏览器窗口开在这块屏幕上。
-# 网页入口: http://<容器>:6080/vnc.html（建议只经 SSH 隧道访问，别暴露公网）
+#!/usr/bin/env bash
+# 容器入口：起虚拟屏幕和 VNC，再让 ccs 打开浏览器窗口。
+#
+# 环境变量：
+#   CCS_NAME    沙盒名字，默认 sandbox
+#   CCS_EXIT    新沙盒的出口，例如 socks5h://172.17.0.1:7897
+#   CCS_SCREEN  Xvfb 分辨率，默认 2560x1440x24，要和配置里的 screen 一致
 set -eu
 
-PROFILE="${SANDBOX_PROFILE:?set SANDBOX_PROFILE}"
-EXIT="${SANDBOX_EXIT:-socks5h://172.18.0.1:7871}"
-DISPLAY_NUM="${SANDBOX_DISPLAY:-:99}"
-GEOMETRY="${SANDBOX_GEOMETRY:-1440x900x24}"
+export DISPLAY="${DISPLAY:-:99}"
+screen="${CCS_SCREEN:-2560x1440x24}"
 
-Xvfb "$DISPLAY_NUM" -screen 0 "$GEOMETRY" &
-sleep 1
-x11vnc -display "$DISPLAY_NUM" -forever -shared -nopw -listen localhost -rfbport 5900 -bg -o /tmp/x11vnc.log
-websockify --web /usr/share/novnc 0.0.0.0:6080 localhost:5900 &
-sleep 1
+Xvfb "$DISPLAY" -screen 0 "$screen" -nolisten tcp >/tmp/xvfb.log 2>&1 &
+xvfb_pid=$!
 
-export DISPLAY="$DISPLAY_NUM"
-export SANDBOX_ROOT="${SANDBOX_ROOT:-/data}"
+# 等 X socket 出现，最多 5 秒
+x_socket="/tmp/.X11-unix/X${DISPLAY#:}"
+for _ in $(seq 1 50); do
+    [ -S "$x_socket" ] && break
+    sleep 0.1
+done
+if [ ! -S "$x_socket" ]; then
+    echo "Xvfb 没起来，看 /tmp/xvfb.log" >&2
+    kill "$xvfb_pid" 2>/dev/null || true
+    exit 1
+fi
 
-echo "沙盒已启动：profile=$PROFILE exit=$EXIT display=$DISPLAY_NUM"
-echo "noVNC: http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale"
-exec ccs web "$PROFILE" --exit "$EXIT"
+x11vnc -display "$DISPLAY" -forever -shared -nopw -rfbport 5900 \
+    -listen 0.0.0.0 >/tmp/x11vnc.log 2>&1 &
+websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 >/tmp/websockify.log 2>&1 &
+echo "noVNC: http://localhost:6080/vnc.html"
+
+name="${CCS_NAME:-sandbox}"
+if [ ! -d "$HOME/sandboxes/$name" ]; then
+    if [ -n "${CCS_EXIT:-}" ]; then
+        ccs new "$name" --exit "$CCS_EXIT"
+    else
+        ccs new "$name"
+    fi
+fi
+
+exec ccs web "$name"

@@ -1,0 +1,9 @@
+# 构建镜像时不要把本机环境和数据带进去
+.git
+.venv
+__pycache__/
+*.pyc
+sandboxes/
+profiles/
+data/
+*.bundle.tar.gz

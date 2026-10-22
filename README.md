@@ -101,6 +101,28 @@ Windows 任务栏会出现一个浏览器窗口（WSLg）。用完直接关窗�
 ccs check profile1
 ```
 
+## 容器模式
+
+沙盒也能跑在容器里，用浏览器打开 noVNC 操作，不用 WSLg。
+
+```
+CCS_EXIT=socks5h://172.17.0.1:7897 \
+  docker compose -f docker/compose.yaml up --build
+```
+
+然后打开 `http://localhost:6080/vnc.html`。
+
+| 环境变量 | 作用 | 默认 |
+|---|---|---|
+| `CCS_NAME` | 沙盒名字，不存在就新建 | `sandbox` |
+| `CCS_EXIT` | 新沙盒的出口 | 空（direct） |
+| `CCS_SCREEN` | 虚拟屏幕，要和配置里的 `screen` 一致 | `2560x1440x24` |
+
+* 容器里的 `127.0.0.1` 不是宿主机的代理。出口要写宿主机在容器网桥里的地址：
+  Linux 用 `172.17.0.1`，Docker Desktop 用 `host.docker.internal`。
+* 账号数据挂在宿主机的 `~/sandboxes`，容器重建不丢。
+* 镜像基础是公开的 `python:3.13-slim`，依赖和引擎由 `./install.sh --auto` 装好。
+
 ## DNS：沙盒内保证干净
 
 沙盒自带一个 DNS 中继（`src/ccs/network/dns_relay.py`）。`ccs web` 时在同一个进程里
