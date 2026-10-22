@@ -17,6 +17,7 @@ from ccs.errors import die, log_line, say
 from ccs.network import pick_exit, resolve_exit
 from ccs.sandbox import bundle, store
 from ccs.sandbox.model import Sandbox
+from ccs.ui import rich_version
 
 
 def load_runtime() -> dict:
@@ -230,6 +231,23 @@ def _relay_available() -> bool:
     return importlib.util.find_spec("ccs.network.dns_relay") is not None
 
 
+def _engine_version() -> str:
+    try:
+        from importlib import metadata  # noqa: PLC0415 - 只在 doctor 用到
+        return metadata.version("invisible-playwright")
+    except Exception:  # noqa: BLE001 - 没装就是空
+        return ""
+
+
+def _browser_ready() -> bool:
+    cache = Path.home() / ".cache" / "invisible-playwright"
+    return cache.is_dir() and any(cache.glob("firefox-*"))
+
+
+def _tool(name: str) -> str:
+    return "有" if shutil.which(name) else "无"
+
+
 def cmd_doctor(_args) -> int:
     cfg = load_runtime()
     source = config.source_path()
@@ -238,6 +256,12 @@ def cmd_doctor(_args) -> int:
     say(f"配置文件  : {source} {'有' if source.is_file() else '无（用内置默认）'}")
     say(f"venv      : {'有' if paths.venv_python().is_file() else '没有 .venv'}")
     say(f"DNS 中继  : {'有' if _relay_available() else '缺少 network/dns_relay.py'}")
+    engine = _engine_version()
+    say(f"引擎      : {engine or '未安装（make setup）'}"
+        + (f" · 浏览器{'已下载' if _browser_ready() else '未下载（make setup）'}" if engine else ""))
+    say(f"富文本    : {'rich ' + rich_version() if rich_version() else '未装（退回纯文本）'}")
+    say(f"系统命令  : curl {_tool('curl')} · pgrep {_tool('pgrep')} · Xvfb {_tool('Xvfb')}"
+        + ("" if shutil.which("Xvfb") else "（Xvfb 只在 headless 时用）"))
     build_pin(cfg)                    # 写错了在这里就报，不用等到启动
     say(f"屏幕      : {cfg.get('screen') or 'auto（按种子生成）'} @ {cfg.get('dpr') or 1}x")
     fonts_desc = ("全部（含简繁中文）" if str(cfg.get("fonts")).lower() == "all"

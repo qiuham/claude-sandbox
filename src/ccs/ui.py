@@ -23,6 +23,14 @@ def rich_available() -> bool:
         return False
 
 
+def rich_version() -> str:
+    """装着钉住版本的 Rich 就返回版本号，否则空串。"""
+    try:
+        return metadata.version("rich") if rich_available() else ""
+    except Exception:  # noqa: BLE001 - 没装就是空
+        return ""
+
+
 def _console():
     from rich.console import Console  # noqa: PLC0415 - 只在真正渲染时导入
 
