@@ -4,19 +4,25 @@
 #   ./install.sh --dev      连开发依赖一起装
 #   ./install.sh --auto     没装 uv 时直接装，不询问
 #   ./install.sh --no-link  只准备环境，不装命令软链
+#   ./install.sh --no-deps  不装系统库，只打印手动命令（也可设 SKIP_DEPS=1）
 set -eu
 
 DEV=0
 AUTO=0
 LINK=1
+NO_DEPS=0
+if [ "${SKIP_DEPS:-0}" = "1" ]; then
+    NO_DEPS=1
+fi
 
 for arg in "$@"; do
     case "$arg" in
         --dev|-d)   DEV=1 ;;
         --auto|-y)  AUTO=1 ;;
         --no-link)  LINK=0 ;;
+        --no-deps)  NO_DEPS=1 ;;
         -h|--help)
-            sed -n '2,8p' "$0"
+            sed -n '2,7p' "$0"
             exit 0
             ;;
         *)
@@ -83,24 +89,59 @@ lack="$(printf '%s\n' "$libs" | sed -n 1p)"
 pkgs="$(printf '%s\n' "$libs" | sed -n 2p)"
 if [ -n "$lack" ]; then
     say "缺少系统库: $lack"
-    if command -v apt-get >/dev/null 2>&1; then
-        if [ "$AUTO" = "1" ]; then
-            run_apt=1
-        else
-            printf '现在用 apt 装吗（需要 sudo 密码）？[y/N] '
-            read -r answer || answer=""
-            case "$answer" in
-                y|Y) run_apt=1 ;;
-                *) run_apt=0 ;;
-            esac
-        fi
-        if [ "$run_apt" = "1" ]; then
-            sudo apt-get install -y $pkgs || say "apt 装失败，手动装：sudo apt install -y $pkgs"
-        else
-            say "跳过。启动前手动装：sudo apt install -y $pkgs"
-        fi
-    else
+    if ! command -v apt-get >/dev/null 2>&1; then
         say "不是 apt 系统，手动装上这些库：$pkgs"
+    else
+        # 提权顺序：root 直接跑；sudo 免密用 -n；
+        # 有终端才用普通 sudo（可以问密码）；都不行就只打印命令。
+        priv=""
+        if [ "$EUID" -eq 0 ]; then
+            priv=""
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            priv="sudo -n"
+        elif command -v sudo >/dev/null 2>&1 && [ -t 0 ]; then
+            priv="sudo"
+        fi
+        if [ "$EUID" -eq 0 ]; then
+            manual_prefix=""
+        else
+            manual_prefix="sudo "
+        fi
+        manual_update="${manual_prefix}apt-get -q update"
+        manual_install="${manual_prefix}env DEBIAN_FRONTEND=noninteractive apt-get -y -q --no-install-recommends -o DPkg::Lock::Timeout=120 install $pkgs"
+        exec_update="${priv:+$priv }apt-get -q update"
+        exec_install="${priv:+$priv }env DEBIAN_FRONTEND=noninteractive apt-get -y -q --no-install-recommends -o DPkg::Lock::Timeout=120 install $pkgs"
+
+        run_as_root() {
+            case "$priv" in
+                "sudo -n") sudo -n env DEBIAN_FRONTEND=noninteractive "$@" ;;
+                "sudo") sudo env DEBIAN_FRONTEND=noninteractive "$@" ;;
+                *) env DEBIAN_FRONTEND=noninteractive "$@" ;;
+            esac
+        }
+
+        if [ "$NO_DEPS" = "1" ]; then
+            say "已跳过安装（--no-deps 或 SKIP_DEPS=1）。手动执行："
+            say "  $manual_update"
+            say "  $manual_install"
+        elif [ "$EUID" -ne 0 ] && [ -z "$priv" ]; then
+            say "没有可用的 sudo，也不在终端里，不自动装。手动执行："
+            say "  $manual_update"
+            say "  $manual_install"
+        else
+            read -r -a pkg_list <<< "$pkgs"
+            say "执行: $exec_update"
+            if ! run_as_root apt-get -q update; then
+                say "警告：apt-get update 失败，继续装库"
+            fi
+            say "执行: $exec_install"
+            if ! run_as_root apt-get -y -q --no-install-recommends \
+                -o DPkg::Lock::Timeout=120 install "${pkg_list[@]}"; then
+                say "安装失败。手动执行："
+                say "  $manual_update"
+                say "  $manual_install"
+            fi
+        fi
     fi
 else
     say "系统库齐了"

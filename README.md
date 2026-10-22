@@ -61,10 +61,14 @@ make dev              # 开发这套：连 ruff 一起装
 ./install.sh          # 等于 make setup
 ./install.sh --dev    # 等于 make dev
 ./install.sh --auto   # 没装 uv 时直接装，不询问
+./install.sh --no-deps   # 不装系统库，只打印手动命令
 ```
 
-它做四件事：`uv sync` 建环境装依赖 → 下载浏览器引擎（约 260 MB）→
+它做五件事：`uv sync` 建环境装依赖 → 下载浏览器引擎（约 260 MB）→
+缺系统库时自动用 apt 装（先打印完整命令）→
 把 `ccs` 软链到 `~/.local/bin` → 跑一次 `ccs doctor` 自检。
+
+不想让脚本装系统库时，加 `--no-deps`，或设环境变量 `SKIP_DEPS=1`。
 
 引擎版本钉在 `pyproject.toml` 里（`invisible-playwright==0.35.10`）。
 **指纹一致依赖引擎版本一致**，对方装同样版本，同一个 seed 才能还原同样的指纹。
