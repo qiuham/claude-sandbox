@@ -66,10 +66,12 @@ DEFAULT_CONFIG = {
         "att": {"label": "美国 AT&T（经 46.2）",
                 "ssh": {"host": "64.83.46.2", "user": "root",
                         "remote_port": 7873, "local_port": 7883}},
-        # 在 46.2 上跑（容器/宿主机）时直连 mihomo
-        "cox-direct": {"label": "美国 Cox（46.2 直连）", "proxy": "socks5h://172.18.0.1:7871"},
-        "wave-direct": {"label": "美国 Wave（46.2 直连）", "proxy": "socks5h://172.18.0.1:7872"},
-        "att-direct": {"label": "美国 AT&T（46.2 直连）", "proxy": "socks5h://172.18.0.1:7873"},
+        # 原生环境：**不设任何代理**。出口取决于这台机器自己有没有 TUN/透明代理。
+        "direct": {"label": "原生环境（无代理）", "direct": True},
+        # 在 46.2 上跑（容器/宿主机）时，显式连 mihomo 的端口
+        "cox-46.2": {"label": "美国 Cox（46.2 的 mihomo）", "proxy": "socks5h://172.18.0.1:7871"},
+        "wave-46.2": {"label": "美国 Wave（46.2 的 mihomo）", "proxy": "socks5h://172.18.0.1:7872"},
+        "att-46.2": {"label": "美国 AT&T（46.2 的 mihomo）", "proxy": "socks5h://172.18.0.1:7873"},
     }
 }
 
@@ -160,6 +162,8 @@ def resolve_proxy(spec: str, cfg: dict) -> str:
     entry = (cfg.get("exits") or {}).get(spec)
     if not entry:
         die(f"未知出口 {spec}；可选: {', '.join(sorted(cfg.get('exits') or {}))}")
+    if entry.get("direct"):
+        return ""              # 空串 = 不用代理，走原生环境
     if entry.get("proxy"):
         return entry["proxy"]
     ssh = entry.get("ssh") or {}
@@ -210,19 +214,24 @@ def ensure_tunnel(host: str, user: str, remote: int, local: int) -> None:
 
 
 def curl_exit(proxy: str) -> str:
-    """用 curl 量出口 IP：urllib 不支持 SOCKS，curl 支持 socks5h。"""
+    """用 curl 量出口 IP。proxy 为空 = 不指定代理，量的是这台机器原生出口。"""
+    cmd = ["curl", "-s", "--max-time", "15"]
+    if proxy:
+        cmd += ["-x", proxy]
+    cmd.append("https://api.ipify.org")
     try:
-        out = subprocess.run(
-            ["curl", "-s", "--max-time", "15", "-x", proxy, "https://api.ipify.org"],
-            capture_output=True, text=True, timeout=25,
-        )
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         return out.stdout.strip() or f"(失败: {out.stderr.strip()[:80]})"
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"(失败: {exc})"
 
 
 def preflight(name: str, spec: str, label: str, proxy: str) -> str:
-    say(f"出口    : {spec}（{label or '-'}）")
+    if proxy:
+        say(f"出口    : {spec}（{label or '-'}）")
+    else:
+        say(f"出口    : {spec}（{label or '原生环境'}，不设代理）")
+        say("         出口 IP 由这台机器的 TUN/透明代理决定；沙盒不替你设代理")
     ip = curl_exit(proxy)
     say(f"出口 IP : {ip}")
     if not ip.startswith("("):
@@ -267,8 +276,9 @@ def launch(name: str, proxy: str, headless: bool, timeout: int = 0) -> int:
         locale="auto",              # 按出口 IP 的地区选语言
         profile_dir=str(profile),
         extra_prefs=dict(NO_DIALOG_PREFS),
-        proxy={"server": proxy.replace("socks5h://", "socks5://")},
     )
+    if proxy:
+        kw["proxy"] = {"server": proxy.replace("socks5h://", "socks5://")}
     with InvisiblePlaywright(**kw) as browser:
         ctx = browser.contexts[0] if hasattr(browser, "contexts") and browser.contexts else browser
         page = ctx.new_page()
@@ -339,7 +349,7 @@ def run(args, headless: bool) -> int:
     meta = read_meta(args.name)
     spec = pick_exit(args, meta)
     entry = (cfg.get("exits") or {}).get(spec) or {}
-    proxy = resolve_proxy(spec, cfg)
+    proxy = resolve_proxy(spec, cfg)          # "" 表示不用代理
     ip = preflight(args.name, spec, entry.get("label", ""), proxy)
     if ip.startswith("("):
         die("出口不通，先别继续")
@@ -377,7 +387,9 @@ def cmd_doctor(args) -> int:
     say("")
     say(f"{'出口名':<14} {'形态':<8} 说明")
     for name, entry in sorted((cfg.get("exits") or {}).items()):
-        if entry.get("proxy"):
+        if entry.get("direct"):
+            kind, detail = "direct", "不用代理，走原生环境"
+        elif entry.get("proxy"):
             kind, detail = "proxy", entry["proxy"]
         else:
             ssh = entry.get("ssh") or {}

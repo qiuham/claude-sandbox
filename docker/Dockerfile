@@ -19,6 +19,6 @@ RUN chmod 755 /usr/local/bin/sandbox /usr/local/bin/sandbox-entrypoint \
 
 ENV SANDBOX_ROOT=/data \
     SANDBOX_PROFILE=demo \
-    SANDBOX_EXIT=cox-direct
+    SANDBOX_EXIT=cox-46.2
 EXPOSE 6080
 ENTRYPOINT ["sandbox-entrypoint"]

@@ -25,16 +25,19 @@
     "local":  {"label": "本机 Clash", "proxy": "socks5h://127.0.0.1:7897"},
     "cox":    {"label": "46.2 的 Cox", "ssh": {"host": "64.83.46.2", "user": "root",
                                                "remote_port": 7871, "local_port": 7881}},
-    "cox-direct": {"label": "在 46.2 上直连", "proxy": "socks5h://172.18.0.1:7871"}
+    "direct":  {"label": "原生环境", "direct": true},
+    "cox-46.2": {"label": "在 46.2 上连 mihomo", "proxy": "socks5h://172.18.0.1:7871"}
   }
 }
 ```
 
-* `proxy` —— 直接连。本机 Clash、46.2 上的 mihomo、第三方代理都用这种。
+* `proxy` —— 显式选一个代理。本机 Clash、46.2 上的 mihomo、第三方代理都用这种。
+* `direct` —— **完全不用代理**，浏览器走原生环境。出口是多少取决于这台机器自己有没有
+  TUN / 透明代理；沙盒不替你设。
 * `ssh` —— 出口只在另一台机器上能连时，用 SSH 本地转发拉过来。
 
-不写配置也能用，内置默认：`local`（7897）、`cox`/`wave`/`att`（经 46.2 的 SSH 隧道）、
-`cox-direct`/`wave-direct`/`att-direct`（在 46.2 上直连）。
+不写配置也能用，内置默认：`local`（7897）、`direct`（不用代理）、
+`cox`/`wave`/`att`（经 46.2 的 SSH 隧道）、`cox-46.2`/`wave-46.2`/`att-46.2`（连 46.2 的 mihomo）。
 
 ### 本机 Clash 的注意点
 
@@ -83,7 +86,7 @@ cd docker
 docker compose up -d --build
 ```
 
-容器里默认用 `cox-direct`（直连 46.2 的 mihomo）。然后用 SSH 隧道访问，
+容器里默认用 `cox-46.2`（连 46.2 的 mihomo）。然后用 SSH 隧道访问，
 **不要把 6080 暴露到公网**：
 
 ```

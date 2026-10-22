@@ -53,6 +53,18 @@ class SandboxCliTests(unittest.TestCase):
             meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
             self.assertEqual(meta["exit"], "socks5h://127.0.0.1:7897")
 
+    def test_direct_exit_means_no_proxy(self):
+        """direct = 完全不用代理；doctor 里要能看到这种形态。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "sandboxes"
+            r = self.run_cli("new", "demo", "--exit", "direct", root=root)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["exit"], "direct")
+            r = self.run_cli("doctor", root=root)
+            self.assertIn("direct", r.stdout)
+            self.assertIn("不用代理", r.stdout)
+
     def test_config_file_adds_exits(self):
         """配置文件里能加自己的出口（proxy 形态），doctor 要列出来。"""
         with tempfile.TemporaryDirectory() as tmp:

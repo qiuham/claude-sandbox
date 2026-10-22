@@ -14,8 +14,12 @@
       "label": "46.2 上的 Cox（本地转发）",
       "ssh": {"host": "64.83.46.2", "user": "root", "remote_port": 7871, "local_port": 7881}
     },
-    "cox-direct": {
-      "label": "在 46.2 上跑时直连 mihomo",
+    "direct": {
+      "label": "原生环境（无代理）",
+      "direct": true
+    },
+    "cox-46.2": {
+      "label": "在 46.2 上跑时连 mihomo",
       "proxy": "socks5h://172.18.0.1:7871"
     }
   }
