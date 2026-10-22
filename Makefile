@@ -2,9 +2,18 @@ PREFIX ?= $(HOME)/.local
 BIN    := $(PREFIX)/bin
 REPO   := $(CURDIR)
 
-.PHONY: setup dev install uninstall test lint version
+.PHONY: help setup dev install uninstall test lint version
 
-# 一键安装：走 install.sh（不依赖 make，没装 make 也能直接跑脚本）
+# 不带参数跑 make 时，列出能用的目标
+help:
+	@echo "make setup   装运行依赖（使用这套）"
+	@echo "make dev     装开发依赖，含 ruff"
+	@echo "make install 只装命令软链"
+	@echo "make test    跑单元测试"
+	@echo "make lint    跑 ruff 检查"
+	@echo "make version 打印版本号"
+
+# 一键安装：走 install.sh（没装 make 的机器也能直接跑脚本）
 setup:
 	./install.sh
 
