@@ -104,6 +104,7 @@ def _read_bundle(tmpdir: Path) -> dict:
 
 
 def import_bundle(bundle: Path, name: str, cfg: dict) -> int:
+    bundle = bundle.expanduser()      # 支持 ~/Downloads/xxx.tar.gz
     if not bundle.is_file():
         die(f"找不到文件: {bundle}")
     target = paths.sandbox_dir(name)
