@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -25,6 +26,7 @@ class Session:
     closed: threading.Event
     browser_pid: int
     profile: Path
+    started_at: float = 0.0
 
 
 def _timeouts(cfg: dict) -> dict:
@@ -185,10 +187,14 @@ def open_session(name: str, proxy: str, cfg: dict, *,
     process.prepare_profile(profile, grace=_timeouts(cfg)["close_grace_s"])
     # 双保险：即使某个版本不认偏好，也别让崩溃报告器冒出来
     os.environ["MOZ_CRASHREPORTER_NO_REPORT"] = "1"   # 留 dump，不弹窗
+    # WSLg 的 Wayland 合成器会断，Firefox 跟着以 SIGSEGV 退出
+    # （Error reading events from display: Broken pipe）。走 XWayland 更稳。
+    os.environ.setdefault("MOZ_ENABLE_WAYLAND", "0")
     kw = _context_kwargs(profile, headless=headless, proxy=proxy, pin=pin, cfg=cfg)
     fit_window = bool(cfg.get("fit_window", True))
     bctx, browser = open_browser(profile, engine, kw,
                                  fit_window=fit_window, cfg=cfg)
     pid = browser_pid(profile)
     page, closed = _prepare_page(browser, cfg)
-    return Session(context=bctx, page=page, closed=closed, browser_pid=pid, profile=profile)
+    return Session(context=bctx, page=page, closed=closed, browser_pid=pid,
+                   profile=profile, started_at=time.time())

@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 import socket
 import sqlite3
 import struct
@@ -16,6 +17,7 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC))
 
 from ccs import config, paths, report  # noqa: E402
+from ccs.browser import crash  # noqa: E402
 from ccs.browser.launcher import session_prefs  # noqa: E402
 from ccs.browser.tasks import (  # noqa: E402
     _parse_csv,
@@ -417,6 +419,28 @@ class SessionPrefsTests(unittest.TestCase):
             prefs = session_prefs(config.DEFAULT_CONFIG, proxy)
             self.assertTrue(prefs["media.peerconnection.ice.proxy_only"], proxy)
             self.assertTrue(prefs["media.peerconnection.ice.no_host"], proxy)
+
+
+class CrashReportTests(unittest.TestCase):
+    """崩溃原因：只认本次会话之后写的文件。"""
+
+    def test_latest_reason_reads_newest_after_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            old_file = folder / "old.extra"
+            old_file.write_text('{"MozCrashReason": "旧崩溃"}', encoding="utf-8")
+            new_file = folder / "new.extra"
+            new_file.write_text('{"MozCrashReason": "Error reading events from display: Broken pipe"}',
+                                encoding="utf-8")
+            now = new_file.stat().st_mtime
+            os.utime(old_file, (now - 100, now - 100))
+            with mock.patch.object(crash, "REPORTS", folder):
+                self.assertIn("Broken pipe", crash.latest_reason(now - 10))
+                self.assertEqual(crash.latest_reason(now + 10), "")
+
+    def test_explain_broken_pipe(self):
+        self.assertIn("WSLg", crash.explain("Error reading events from display: Broken pipe"))
+        self.assertEqual(crash.explain("别的错误"), "")
 
 
 class GeoTests(unittest.TestCase):

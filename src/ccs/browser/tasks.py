@@ -13,7 +13,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from ccs import config, errors, paths
-from ccs.browser import launcher, prefs, process
+from ccs.browser import crash, launcher, prefs, process
 from ccs.errors import die, log_line, say
 from ccs.network import DnsRelay, pick_exit, preflight, resolve_exit
 from ccs.sandbox import store
@@ -448,6 +448,8 @@ def wait_loop(session, name: str, timeout: int, cfg: dict) -> int:
             say("到达 --timeout，关闭浏览器")
             return 0
         if session.closed.is_set():
+            if pid and not process.pid_alive(pid):
+                return _say_crash(session, pid)
             say("窗口已关闭，沙盒数据已保留")
             return 0
         # 中途登录了就顺手记一下；没登录时接口返回空，不会写文件
@@ -456,12 +458,23 @@ def wait_loop(session, name: str, timeout: int, cfg: dict) -> int:
             harvest_account(session.page, name)
         # 浏览器崩溃时 wait_for_timeout 不会抛错，进程会一直挂着。主动看一眼。
         if pid and not process.pid_alive(pid):
-            say("浏览器进程已经退出（可能是崩溃），沙盒数据已保留")
-            log_line(f"浏览器 PID {pid} 不在了，按崩溃处理")
-            return 0
+            return _say_crash(session, pid)
         # 不用 page.wait_for_timeout：浏览器一崩它会永远挂着，
         # 这里只需要睡一秒，靠上面的 PID 检查发现问题。
         time.sleep(t["run_sleep_s"])
+
+
+def _say_crash(session, pid: int) -> int:
+    """浏览器没了：说清楚原因，别让用户以为是账号问题。"""
+    reason = crash.latest_reason(session.started_at)
+    say("浏览器进程已经退出（可能是崩溃），沙盒数据已保留")
+    if reason:
+        say(f"崩溃原因: {reason[:160]}")
+        hint = crash.explain(reason)
+        if hint:
+            say(f"           {hint}")
+    log_line(f"浏览器 PID {pid} 不在了，按崩溃处理；原因 {reason[:200]}")
+    return 0
 
 
 def _run_browser(args, proxy: str, cfg: dict, *, mode: str, exit_ip: str) -> int:
