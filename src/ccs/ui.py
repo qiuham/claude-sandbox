@@ -51,20 +51,18 @@ def emit_table(headers: list[str], rows: list[list[str]], *,
         # 每列都给 min_width：只给第一列的话，Rich 会把第一列挤成 0 宽直接消失
         table.add_column(header, overflow="ellipsis", no_wrap=True, min_width=4)
     for index, row in enumerate(rows):
-        if styles and index < len(styles):
-            table.add_row(*[_cell(value, styles[index][col] if col < len(styles[index]) else "")
-                            for col, value in enumerate(row)])
-        else:
-            table.add_row(*row)
+        row_styles = styles[index] if styles and index < len(styles) else []
+        table.add_row(*[_cell(value, row_styles[col] if col < len(row_styles) else "")
+                        for col, value in enumerate(row)])
     _console().print(table)
 
 
 def _cell(value: str, style: str):
-    if not style:
-        return value
+    """一律包成 Text：直接传 str 会被 Rich 当成标记解析，
+    节点名里的 [vless] 这类方括号会被吃掉。"""
     from rich.text import Text  # noqa: PLC0415 - 只在真正渲染时导入
 
-    return Text(value, style=style)
+    return Text(value, style=style or None)
 
 
 def _table(title: str) -> Table:

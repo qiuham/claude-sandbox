@@ -71,6 +71,8 @@ def export_bundle(name: str, output: Path, cfg: dict, pin: dict) -> int:
             "sandbox": name,
             "exit": meta.get("exit", ""),
             "exit_ip": meta.get("exit_ip", ""),
+            "node": meta.get("exit_node", ""),
+            "label": meta.get("exit_label", ""),
             "pin": pin,
             "fonts": cfg.get("fonts", "western"),
             "email": account.get("email", ""),
@@ -128,6 +130,8 @@ def import_bundle(bundle: Path, name: str, cfg: dict) -> int:
         "name": name,
         "exit": exit_spec,
         "exit_ip": info.get("exit_ip", ""),
+        "exit_node": info.get("node", ""),
+        "exit_label": info.get("label", ""),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "pin": info.get("pin") or {},
         "fonts": info.get("fonts") or "",
@@ -144,6 +148,8 @@ def import_bundle(bundle: Path, name: str, cfg: dict) -> int:
     say(f"账号    : {info.get('email') or '-'}")
     say(f"出口    : {exit_spec}")
     if info.get("exit_ip"):
-        say(f"原出口IP: {info['exit_ip']}（首次启动会核对，不一致会拦住）")
+        label = info.get("label") or info.get("node") or ""
+        tail = f"（{label}）" if label else ""
+        say(f"原出口IP: {info['exit_ip']}{tail}（首次启动会核对，不一致会拦住）")
     say(f"下一步  : ccs web {name}")
     return 0

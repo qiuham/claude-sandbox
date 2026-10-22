@@ -28,7 +28,7 @@ def status_lines(info: dict) -> list[str]:
         f"名称      : {info.get('name')}",
         f"目录      : {info.get('dir')}",
         f"出口      : {info.get('exit', '-')}",
-        f"出口 IP   : {info.get('exit_ip') or '-（启动一次后记录）'}",
+        f"出口 IP   : {exit_ip_label(info)}",
         f"指纹种子  : {seed if seed is not None else '-'}",
         f"profile   : {info.get('profile_bytes', 0) / 1024 / 1024:.1f} MB",
         f"创建时间  : {info.get('created_at', '-')}",
@@ -87,6 +87,15 @@ def format_created(value: str) -> str:
         return text[:16]
 
 
+def exit_ip_label(info: dict) -> str:
+    """出口 IP 加上当前节点名：104.202.107.35（[vless]美国Wave1）。"""
+    ip = str(info.get("exit_ip") or "")
+    label = str(info.get("exit_label") or info.get("exit_node") or "")
+    if not ip:
+        return "-（启动一次后记录）"
+    return f"{ip}（{label}）" if label else ip
+
+
 def ls_rows(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
     """ls 的表头和单元格，给 ui.emit_table 用。"""
     headers = ["profile", "出口 IP", "账号", "档位", "对话", "注册", "组织"]
@@ -95,7 +104,7 @@ def ls_rows(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
         acct = row.get("account") or {}
         cells.append([
             str(row.get("name", "-")),
-            str(row.get("exit_ip", "-")),
+            exit_ip_label(row) if row.get("exit_ip") else "-",
             str(acct.get("email") or "-"),
             plan_label(acct),
             str(warmup_count(acct)),
@@ -164,7 +173,7 @@ def status_pairs(info: dict) -> list[tuple[str, str]]:
         ("名称", str(info.get("name"))),
         ("目录", str(info.get("dir"))),
         ("出口", str(info.get("exit", "-"))),
-        ("出口 IP", str(info.get("exit_ip") or "-（启动一次后记录）")),
+        ("出口 IP", exit_ip_label(info)),
         ("指纹种子", str(seed if seed is not None else "-")),
         ("profile", f"{info.get('profile_bytes', 0) / 1024 / 1024:.1f} MB"),
         ("创建时间", str(info.get("created_at", "-"))),

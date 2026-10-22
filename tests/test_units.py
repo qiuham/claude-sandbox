@@ -26,7 +26,7 @@ from ccs.browser.tasks import (  # noqa: E402
     webrtc_public_ips,
     webrtc_verdict,
 )
-from ccs.network import discover, stun  # noqa: E402
+from ccs.network import discover, geo, stun  # noqa: E402
 from ccs.network.dns_relay import DnsRelay  # noqa: E402
 from ccs.network.doh import ATYP_DOMAIN, DohClient  # noqa: E402
 from ccs.network.proxy import resolve_exit  # noqa: E402
@@ -197,6 +197,11 @@ class SandboxStoreTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
+    def test_exit_label_shows_place(self):
+        label = report.exit_ip_label({"exit_ip": "1.2.3.4", "exit_label": "美国 圣何塞"})
+        self.assertEqual(label, "1.2.3.4（美国 圣何塞）")
+        self.assertEqual(report.exit_ip_label({"exit_ip": "1.2.3.4"}), "1.2.3.4")
+
     def test_ls_and_status_tables(self):
         lines = report.ls_lines([
             {"name": "demo", "exit_ip": "1.2.3.4",
@@ -412,6 +417,33 @@ class SessionPrefsTests(unittest.TestCase):
             prefs = session_prefs(config.DEFAULT_CONFIG, proxy)
             self.assertTrue(prefs["media.peerconnection.ice.proxy_only"], proxy)
             self.assertTrue(prefs["media.peerconnection.ice.no_host"], proxy)
+
+
+class GeoTests(unittest.TestCase):
+    """地理标签：查一次就缓存；有节点名时用节点名代替运营商。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.cache = Path(self._tmp.name) / "geo.json"
+        patcher = mock.patch.object(geo, "cache_file", return_value=self.cache)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_lookup_caches_result(self):
+        with mock.patch.object(geo, "_fetch", return_value="美国 圣何塞 · Wave Broadband") as fetch:
+            self.assertEqual(geo.lookup("1.2.3.4"), "美国 圣何塞 · Wave Broadband")
+            self.assertEqual(geo.lookup("1.2.3.4"), "美国 圣何塞 · Wave Broadband")
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_describe_uses_node_name(self):
+        with mock.patch.object(geo, "lookup", return_value="美国 圣何塞 · Wave Broadband"):
+            self.assertEqual(geo.describe("1.2.3.4", "[vless]美国Wave1"),
+                             "美国 圣何塞 · [vless]美国Wave1")
+
+    def test_describe_empty_when_unknown(self):
+        with mock.patch.object(geo, "lookup", return_value=""):
+            self.assertEqual(geo.describe("1.2.3.4"), "")
 
 
 class StunTests(unittest.TestCase):
