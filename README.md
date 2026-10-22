@@ -21,18 +21,23 @@
 | 层 | 做法 |
 |---|---|
 | 网络 | 浏览器只连指定的代理地址，不依赖系统代理、不依赖 TUN。DNS 由代理侧解析 |
-| 出口 | **不配 = direct（不用代理）；配了 = 走指定代理** |
+| 出口 | **不配 = auto（自动找本机代理）；配了 = 走指定代理** |
 | 浏览器 | invisible_playwright（改过的 Firefox）：指纹种子、时区/语言、WebRTC 都与出口一致 |
 | 身份 | 每个沙盒独立 profile 目录；种子写在 `profile/seed.json`，以后一直用它 |
 
 ## 出口
 
-只有两种：
+三种：
 
 | 写法 | 含义 |
 |---|---|
-| 不配置 / `--exit direct` | 完全不用代理，走原生环境（出口由本机的 TUN/透明代理决定） |
+| 不配置 = `auto`（默认） | 启动时找本机代理；找到就用，找不到才 direct |
+| `--exit direct` | 完全不用代理，走原生环境（出口由本机的 TUN/透明代理决定） |
 | 配置里写 `exit` / `--exit socks5h://…` | 显式走指定代理 |
+
+`auto` 会挨个试 `127.0.0.1` 的 7897（Clash Verge）、7890（Clash）、10808（v2ray）、1080，
+WSL 的 NAT 模式下还会试默认网关。做一次 SOCKS5 握手再 CONNECT 一个域名，通了才算数。
+新建沙盒时找到哪个就写进该沙盒的 `meta.json`，以后不再变。
 
 配置文件 `~/.config/claude-sandbox/ccs.toml`（见 `ccs.toml.example`）：
 
@@ -42,9 +47,9 @@ exit = "socks5h://127.0.0.1:7897"
 
 旧版的 `~/.config/claude-sandbox/config.json` 仍然能读，启动时会提示"已迁移"。
 
-* 文件不存在 = direct。
-* `exit` 可以是任何 `socks5h://` / `http://` 地址。
+* `exit` 可以是任何 `socks5h://` / `http://` 地址；出口优先用 `socks5h://`。
 * 命令行 `--exit <地址>` 或 `--exit direct` 优先于配置。
+* `ccs doctor` 会列出检测到的本机代理，并用 STUN 量一次 UDP 出口。
 
 ## 手工版（WSL / 本机）
 

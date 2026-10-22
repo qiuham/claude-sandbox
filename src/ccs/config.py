@@ -92,9 +92,10 @@ SCREEN_HEIGHT_MIN = 480
 SCREEN_HEIGHT_MAX = 4320
 
 DEFAULT_CONFIG = {
-    # 出口没配置 = direct；屏幕默认 1080p（窗口物理宽度 = 面板宽度，必须放得进显示器）；
+    # 出口没配置 = auto（启动时找本机代理，找不到才 direct）；
+    # 屏幕默认 1080p（窗口物理宽度 = 面板宽度，必须放得进显示器）；
     # 字体默认去掉简繁中文（和"美国/日本 Windows"对不上）
-    "exit": "",
+    "exit": "auto",
     "screen": "1920x1080",
     "dpr": 1,
     "fonts": "western",

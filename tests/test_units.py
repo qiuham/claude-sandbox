@@ -25,8 +25,10 @@ from ccs.browser.tasks import (  # noqa: E402
     webrtc_public_ips,
     webrtc_verdict,
 )
+from ccs.network import discover, stun  # noqa: E402
 from ccs.network.dns_relay import DnsRelay  # noqa: E402
 from ccs.network.doh import ATYP_DOMAIN, DohClient  # noqa: E402
+from ccs.network.proxy import resolve_exit  # noqa: E402
 from ccs.report import format_created  # noqa: E402
 from ccs.sandbox import (  # noqa: E402
     bundle,
@@ -368,6 +370,58 @@ class WebRtcTests(unittest.TestCase):
         self.assertEqual(webrtc_verdict(same, "104.202.107.35"), "只有出口 IP，正常")
         leak = ["candidate:1 1 UDP 1686 1.2.3.4 58467 typ srflx"]
         self.assertIn("泄露", webrtc_verdict(leak, "104.202.107.35"))
+
+
+class DiscoverTests(unittest.TestCase):
+    """本机代理探测：能握手 + 能 CONNECT 才算通。"""
+
+    def test_working_proxy_is_found(self):
+        upstream = FakeUpstream()
+        try:
+            self.assertTrue(discover.socks5_ok("127.0.0.1", upstream.port))
+        finally:
+            upstream.close()
+
+    def test_closed_port_is_not_found(self):
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]     # 绑了不监听，端口没人接
+        self.assertFalse(discover.socks5_ok("127.0.0.1", port))
+
+    def test_exit_auto_uses_found_proxy(self):
+        with mock.patch.object(discover, "find_local_proxy",
+                               return_value="socks5h://127.0.0.1:7897"):
+            self.assertEqual(resolve_exit("", {"exit": "auto"}),
+                             ("socks5h://127.0.0.1:7897", "socks5h://127.0.0.1:7897"))
+
+    def test_exit_auto_falls_back_to_direct(self):
+        with mock.patch.object(discover, "find_local_proxy", return_value=""):
+            self.assertEqual(resolve_exit("", {"exit": "auto"}), ("direct", ""))
+
+
+class StunTests(unittest.TestCase):
+    """STUN 响应解析：只认自己事务 ID 的响应，按 XOR 规则还原 IP。"""
+
+    TID = b"0123456789ab"
+
+    def response(self, ip: str, tid: bytes = TID) -> bytes:
+        cookie = struct.pack("!I", stun.MAGIC_COOKIE)
+        port = (5000).to_bytes(2, "big")
+        port_x = bytes(a ^ b for a, b in zip(port, cookie[:2], strict=True))
+        addr_x = bytes(a ^ b for a, b in zip(socket.inet_aton(ip), cookie, strict=True))
+        attr = b"\x00\x01" + port_x + addr_x
+        return (struct.pack("!HHI", 0x0101, len(attr), stun.MAGIC_COOKIE) + tid
+                + struct.pack("!HH", stun.XOR_MAPPED, len(attr)) + attr)
+
+    def test_parse_xor_mapped(self):
+        self.assertEqual(stun.parse(self.response("203.0.113.7"), self.TID), "203.0.113.7")
+
+    def test_other_transaction_is_ignored(self):
+        self.assertEqual(stun.parse(self.response("203.0.113.7", b"xxxxxxxxxxxx"), self.TID), "")
+
+    def test_garbage_is_ignored(self):
+        self.assertEqual(stun.parse(b"", self.TID), "")
+        self.assertEqual(stun.parse(b"\x01\x01", self.TID), "")
 
 
 class CreatedFormatTests(unittest.TestCase):

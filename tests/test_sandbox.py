@@ -29,14 +29,14 @@ class SandboxCliTests(unittest.TestCase):
         path.write_text(json.dumps({"exit": default_exit}), encoding="utf-8")
         return path
 
-    def test_no_config_means_direct(self):
-        """不配就是 direct。"""
+    def test_no_config_means_auto(self):
+        """不配 = auto：找到本机代理就用，找不到才 direct。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
             r = self.run_cli("new", "demo", root=root)
             self.assertEqual(r.returncode, 0, r.stderr)
             meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
-            self.assertEqual(meta["exit"], "direct")
+            self.assertTrue(meta["exit"] == "direct" or meta["exit"].startswith("socks5h://"))
 
     def test_config_sets_default_exit(self):
         """配了 exit，新沙盒默认走它。"""
@@ -78,7 +78,7 @@ class SandboxCliTests(unittest.TestCase):
         """status 看沙盒；set-exit 改出口（并清掉旧的出口 IP 记忆）。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
-            self.assertEqual(self.run_cli("new", "t1", root=root).returncode, 0)
+            self.assertEqual(self.run_cli("new", "t1", "--exit", "direct", root=root).returncode, 0)
             r = self.run_cli("status", "t1", "--json", root=root)
             info = json.loads(r.stdout)
             self.assertEqual(info["name"], "t1")
@@ -118,7 +118,7 @@ class SandboxCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.json")
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("没配置 = direct", r.stdout)
+            self.assertIn("auto（new 时自动找本机代理）", r.stdout)
 
     def test_doctor_finds_dns_relay(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ccs.errors import die, say
+from ccs.network import discover
 
 
 def is_proxy_spec(spec: str) -> bool:
@@ -21,7 +22,16 @@ def resolve_exit(spec: str, cfg: dict) -> tuple[str, str]:  # noqa: RET503 - 末
     """
     spec = str(spec or "").strip()
     if not spec:
-        spec = str(cfg.get("exit") or "direct").strip() or "direct"
+        spec = str(cfg.get("exit") or "auto").strip() or "auto"
+    if spec == "auto":
+        found = discover.find_local_proxy()
+        if not found:
+            say("出口    : 没找到本机代理，走 direct（UDP 会直连，WebRTC 已关闭）")
+            say("          有代理就写进配置的 exit，例如 socks5h://127.0.0.1:7897")
+            return "direct", ""
+        say(f"出口    : 检测到本机代理 {found}，已设为出口")
+        say("          不想要就加 --exit direct")
+        return found, found
     if spec == "direct":
         return "direct", ""
     if is_proxy_spec(spec):

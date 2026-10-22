@@ -14,7 +14,7 @@ from ccs import config, paths, report, ui
 from ccs.browser import deps, process
 from ccs.browser.prefs import build_pin
 from ccs.errors import die, log_line, say
-from ccs.network import pick_exit, resolve_exit
+from ccs.network import discover, pick_exit, resolve_exit, stun
 from ccs.sandbox import bundle, store
 from ccs.sandbox.model import Sandbox
 from ccs.ui import rich_version
@@ -262,6 +262,15 @@ def cmd_doctor(_args) -> int:
     say(f"富文本    : {'rich ' + rich_version() if rich_version() else '未装（退回纯文本）'}")
     say(f"系统命令  : curl {_tool('curl')} · pgrep {_tool('pgrep')} · Xvfb {_tool('Xvfb')}"
         + ("" if shutil.which("Xvfb") else "（Xvfb 只在 headless 时用）"))
+    found = [a for a, ok in discover.probe_all() if ok]
+    say("本机代理  : " + (" · ".join(found) if found else "没找到（new 时会走 direct）"))
+    udp_ip = stun.mapped_ip()
+    if not udp_ip:
+        say("UDP 出口  : 拿不到（UDP 被挡或没网）")
+    elif str(cfg.get("exit") or "auto") == "direct":
+        say(f"UDP 出口  : {udp_ip}（direct：不经代理）")
+    else:
+        say(f"UDP 出口  : {udp_ip}（不经代理；WebRTC 已关闭，不会泄露）")
     lack = deps.missing()
     say("系统库    : " + ("齐" if not lack else f"缺 {len(lack)} 个 · {' '.join(lack)}"))
     if lack:
@@ -276,6 +285,7 @@ def cmd_doctor(_args) -> int:
     say(f"配色      : {scheme_label}")
     say(f"出口 IP   : {'严格：变了就不启动' if cfg.get('strict_ip', True) else '宽松：变了只提示'}")
     say("")
-    default = str(cfg.get("exit") or "direct")
-    say(f"出口      : {default}" + ("（没配置 = direct）" if default == "direct" else ""))
+    default = str(cfg.get("exit") or "auto")
+    hint = {"auto": "（new 时自动找本机代理）", "direct": "（不走代理）"}.get(default, "")
+    say(f"出口      : {default}{hint}")
     return 0
