@@ -1,0 +1,22 @@
+{
+  "//": "复制到 ~/.config/claude-sandbox/config.json 后按实际环境改。出口可以混用 proxy 和 ssh 两种形态。",
+  "default_exit": "local",
+  "exits": {
+    "local": {
+      "label": "本机 Clash / mihomo",
+      "proxy": "socks5h://127.0.0.1:7897"
+    },
+    "my-residential": {
+      "label": "任意住宅代理（直接给地址）",
+      "proxy": "socks5h://user:pass@1.2.3.4:1080"
+    },
+    "cox": {
+      "label": "46.2 上的 Cox（本地转发）",
+      "ssh": {"host": "64.83.46.2", "user": "root", "remote_port": 7871, "local_port": 7881}
+    },
+    "cox-direct": {
+      "label": "在 46.2 上跑时直连 mihomo",
+      "proxy": "socks5h://172.18.0.1:7871"
+    }
+  }
+}

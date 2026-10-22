@@ -11,7 +11,7 @@ services:
     image: claude-sandbox:latest
     environment:
       SANDBOX_PROFILE: ${SANDBOX_PROFILE:-demo}
-      SANDBOX_EXIT: ${SANDBOX_EXIT:-cox}
+      SANDBOX_EXIT: ${SANDBOX_EXIT:-cox-direct}
     volumes:
       - ./data:/data
     ports:

@@ -44,11 +44,34 @@ class SandboxCliTests(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("已存在", r.stderr)
 
+    def test_new_accepts_proxy_url_and_keeps_it(self):
+        """出口可以直接给地址：部署在任何地方都能用，不要求有 SSH。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "sandboxes"
+            r = self.run_cli("new", "demo", "--exit", "socks5h://127.0.0.1:7897", root=root)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["exit"], "socks5h://127.0.0.1:7897")
+
+    def test_config_file_adds_exits(self):
+        """配置文件里能加自己的出口（proxy 形态），doctor 要列出来。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.json"
+            cfg.write_text(json.dumps({"exits": {
+                "mine": {"label": "自家代理", "proxy": "socks5h://10.0.0.1:1080"}}}),
+                encoding="utf-8")
+            env = dict(os.environ, SANDBOX_CONFIG=str(cfg))
+            r = subprocess.run([str(CLI), "doctor"], capture_output=True, text=True,
+                               env=env, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("mine", r.stdout)
+            self.assertIn("10.0.0.1:1080", r.stdout)
+
     def test_doctor_reports_missing_password(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = self.run_cli("doctor", root=Path(tmp), password=Path(tmp) / "nope")
-            self.assertNotEqual(r.returncode, 0)
-            self.assertIn("密码文件", r.stdout)
+            self.assertEqual(r.returncode, 0, r.stderr)   # doctor 只报状态，不判失败
+            self.assertIn("缺", r.stdout)
 
 
 if __name__ == "__main__":

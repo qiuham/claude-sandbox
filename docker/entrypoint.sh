@@ -4,7 +4,7 @@
 set -eu
 
 PROFILE="${SANDBOX_PROFILE:?set SANDBOX_PROFILE}"
-EXIT="${SANDBOX_EXIT:-cox}"
+EXIT="${SANDBOX_EXIT:-cox-direct}"
 DISPLAY_NUM="${SANDBOX_DISPLAY:-:99}"
 GEOMETRY="${SANDBOX_GEOMETRY:-1440x900x24}"
 
@@ -15,7 +15,6 @@ websockify --web /usr/share/novnc 0.0.0.0:6080 localhost:5900 &
 sleep 1
 
 export DISPLAY="$DISPLAY_NUM"
-export SANDBOX_DIRECT=1          # 容器在 46.2 上，直接连 mihomo 的监听端口
 export SANDBOX_ROOT="${SANDBOX_ROOT:-/data}"
 
 echo "沙盒已启动：profile=$PROFILE exit=$EXIT display=$DISPLAY_NUM"

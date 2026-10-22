@@ -7,12 +7,42 @@
 
 | 层 | 做法 |
 |---|---|
-| 网络 | 浏览器只连指定 SOCKS 端口，不依赖系统代理、不依赖 TUN。DNS 由代理侧解析 |
-| 出口 | 46.2 上 mihomo 的监听端口（一个端口一个住宅节点），本机用 SSH 隧道拉过来 |
+| 网络 | 浏览器只连指定的代理地址，不依赖系统代理、不依赖 TUN。DNS 由代理侧解析 |
+| 出口 | **可配置**：本机 Clash、46.2 上的 mihomo、任何 SOCKS/HTTP 代理都行 |
 | 浏览器 | invisible_playwright（改过的 Firefox）：指纹种子、时区/语言、WebRTC 都与出口一致 |
-| 身份 | 每个沙盒独立 profile 目录；种子写在 `profile/seed.json`，以后一直用这一份 |
+| 身份 | 每个沙盒独立 profile 目录；种子写在 `profile/seed.json`，以后一直用它 |
 
-## 手工版（WSL）
+## 出口：两种形态
+
+出口是一个 spec，可以是配置里的名字，也可以直接写地址（`socks5h://host:port`）。
+
+配置文件 `~/.config/claude-sandbox/config.json`（见 `config.example.json`）：
+
+```json
+{
+  "default_exit": "local",
+  "exits": {
+    "local":  {"label": "本机 Clash", "proxy": "socks5h://127.0.0.1:7897"},
+    "cox":    {"label": "46.2 的 Cox", "ssh": {"host": "64.83.46.2", "user": "root",
+                                               "remote_port": 7871, "local_port": 7881}},
+    "cox-direct": {"label": "在 46.2 上直连", "proxy": "socks5h://172.18.0.1:7871"}
+  }
+}
+```
+
+* `proxy` —— 直接连。本机 Clash、46.2 上的 mihomo、第三方代理都用这种。
+* `ssh` —— 出口只在另一台机器上能连时，用 SSH 本地转发拉过来。
+
+不写配置也能用，内置默认：`local`（7897）、`cox`/`wave`/`att`（经 46.2 的 SSH 隧道）、
+`cox-direct`/`wave-direct`/`att-direct`（在 46.2 上直连）。
+
+### 本机 Clash 的注意点
+
+本机 Clash 在**规则模式**下按域名分流。如果 Claude 的规则被指到别的节点（例如指到你自己的
+VPS），出口就不是你以为的那个。要固定出口，请在 Clash 里给目标节点单独开一个监听端口，
+再把那个端口写进配置。
+
+## 手工版（WSL / 本机）
 
 1. 装依赖：
 
@@ -22,7 +52,7 @@ python3 -m venv .venv
 .venv/bin/python -m invisible_playwright fetch      # 下载浏览器引擎（约 260 MB）
 ```
 
-2. 准备 SSH 密码文件（46.2 关掉了密钥登录）：
+2. 如果用 `ssh` 形态的出口，准备密码文件（46.2 关掉了密钥登录）：
 
 ```
 mkdir -p ~/.config/claude-sandbox
@@ -33,14 +63,14 @@ chmod 600 ~/.config/claude-sandbox/ssh-password
 3. 建沙盒、开窗口：
 
 ```
-./sandbox doctor
-./sandbox new demo --exit cox
+./sandbox doctor                 # 看出口列表和依赖
+./sandbox new demo --exit local  # 或者 --exit cox / --exit socks5h://1.2.3.4:1080
 ./sandbox open demo
 ```
 
 Windows 任务栏会出现一个浏览器窗口（WSLg）。用完直接关窗口，profile 会保留。
 
-4. 无头自检（不进窗口也能看出口和 WebRTC）：
+4. 无头自检（需要 xvfb：`sudo apt install -y xvfb`）：
 
 ```
 ./sandbox check demo
@@ -53,7 +83,8 @@ cd docker
 docker compose up -d --build
 ```
 
-然后用 SSH 隧道访问（不要把 6080 暴露到公网）：
+容器里默认用 `cox-direct`（直连 46.2 的 mihomo）。然后用 SSH 隧道访问，
+**不要把 6080 暴露到公网**：
 
 ```
 ssh -L 6080:127.0.0.1:6080 root@64.83.46.2
@@ -65,17 +96,17 @@ ssh -L 6080:127.0.0.1:6080 root@64.83.46.2
 http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
 ```
 
-容器里 `SANDBOX_DIRECT=1`，直接连 `172.18.0.1:<出口端口>`，不需要隧道再套隧道。
+这样只有"屏幕画面"走隧道，浏览器的网络流量不出 46.2。
 
-## 出口
+## 出口 IP 会变
 
-| 名字 | 节点 | 46.2 端口 | 本机隧道端口 |
-|---|---|---|---|
-| `cox` | 美国 Cox 家宽 | 7871 | 7881 |
-| `wave` | 美国 Wave 家宽 | 7872 | 7882 |
-| `att` | 美国 AT&T 家宽 | 7873 | 7883 |
+住宅节点换 IP 不受我们控制。沙盒第一次打开会记下出口 IP；以后变了会提示：
 
-日本那条（7874）是机房 IP，已停用。
+```
+注意: 出口 IP 变了（上次 24.249.245.74，现在 162.225.43.129）
+```
+
+同一个号跨会话换 IP 是风险信号，看到提示就先别注册。
 
 ## 局限
 
