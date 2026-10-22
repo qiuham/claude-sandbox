@@ -11,7 +11,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from ccs import config, paths, report, ui
-from ccs.browser import process
+from ccs.browser import deps, process
 from ccs.browser.prefs import build_pin
 from ccs.errors import die, log_line, say
 from ccs.network import pick_exit, resolve_exit
@@ -262,6 +262,10 @@ def cmd_doctor(_args) -> int:
     say(f"富文本    : {'rich ' + rich_version() if rich_version() else '未装（退回纯文本）'}")
     say(f"系统命令  : curl {_tool('curl')} · pgrep {_tool('pgrep')} · Xvfb {_tool('Xvfb')}"
         + ("" if shutil.which("Xvfb") else "（Xvfb 只在 headless 时用）"))
+    lack = deps.missing()
+    say("系统库    : " + ("齐" if not lack else f"缺 {len(lack)} 个 · {' '.join(lack)}"))
+    if lack:
+        say(f"            sudo apt install -y {' '.join(deps.packages(lack))}")
     build_pin(cfg)                    # 写错了在这里就报，不用等到启动
     say(f"屏幕      : {cfg.get('screen') or 'auto（按种子生成）'} @ {cfg.get('dpr') or 1}x")
     fonts_desc = ("全部（含简繁中文）" if str(cfg.get("fonts")).lower() == "all"

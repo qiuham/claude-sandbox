@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ccs import paths
-from ccs.browser import process
+from ccs.browser import deps, process
 from ccs.browser.prefs import engine_class
-from ccs.errors import log_line, say
+from ccs.errors import die, log_line, say
 from ccs.sandbox import store
 
 if TYPE_CHECKING:
@@ -68,7 +68,13 @@ def open_browser(profile: Path, engine, kw: dict, *, fit_window: bool, cfg: dict
     try:
         return bctx, bctx.__enter__()
     except Exception as exc:
-        if "already running" not in str(exc).lower():
+        text = str(exc)
+        # 引擎缺系统库时直接退出，报的是共享库加载失败，不是 Python 错误
+        if "shared object file" in text or "XPCOM" in text:
+            info = deps.hint()
+            if info:
+                die(info)
+        if "already running" not in text.lower():
             raise
         say("浏览器说 profile 被占用，清场后重试一次")
         process.prepare_profile(profile, grace)

@@ -69,6 +69,43 @@ fi
 say "检查浏览器引擎（首次约 260 MB）..."
 .venv/bin/python -m invisible_playwright fetch
 
+# -------------------------------------------------------- 3.5 系统库
+# 引擎是动态链接的 Firefox。精简的 Ubuntu / WSL 常缺 libasound，缺了会直接退出。
+say "检查系统库..."
+libs="$(PYTHONPATH="$here/src" .venv/bin/python - <<'PY'
+from ccs.browser import deps
+lack = deps.missing()
+print(" ".join(lack))
+print(" ".join(deps.packages(lack)))
+PY
+)"
+lack="$(printf '%s\n' "$libs" | sed -n 1p)"
+pkgs="$(printf '%s\n' "$libs" | sed -n 2p)"
+if [ -n "$lack" ]; then
+    say "缺少系统库: $lack"
+    if command -v apt-get >/dev/null 2>&1; then
+        if [ "$AUTO" = "1" ]; then
+            run_apt=1
+        else
+            printf '现在用 apt 装吗（需要 sudo 密码）？[y/N] '
+            read -r answer || answer=""
+            case "$answer" in
+                y|Y) run_apt=1 ;;
+                *) run_apt=0 ;;
+            esac
+        fi
+        if [ "$run_apt" = "1" ]; then
+            sudo apt-get install -y $pkgs || say "apt 装失败，手动装：sudo apt install -y $pkgs"
+        else
+            say "跳过。启动前手动装：sudo apt install -y $pkgs"
+        fi
+    else
+        say "不是 apt 系统，手动装上这些库：$pkgs"
+    fi
+else
+    say "系统库齐了"
+fi
+
 # ---------------------------------------------------------- 4. 命令软链
 if [ "$LINK" = "1" ]; then
     prefix="${PREFIX:-$HOME/.local}"

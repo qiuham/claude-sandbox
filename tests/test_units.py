@@ -329,6 +329,25 @@ class PromptPickTests(unittest.TestCase):
         self.assertIn(first, prompts)
 
 
+class DepsTests(unittest.TestCase):
+    """系统库检查：缺哪个就给出对应的 apt 包名。"""
+
+    def test_missing_lib_maps_to_package(self):
+        from ccs.browser import deps  # noqa: PLC0415 - 只在这个测试里用
+
+        with mock.patch.object(deps, "missing", return_value=["libasound.so.2"]):
+            with mock.patch.object(deps, "_apt_has", side_effect=lambda pkg: pkg == "libasound2t64"):
+                self.assertEqual(deps.packages(["libasound.so.2"]), ["libasound2t64"])
+                self.assertIn("libasound.so.2", deps.hint())
+
+    def test_nothing_missing_gives_no_hint(self):
+        from ccs.browser import deps  # noqa: PLC0415 - 只在这个测试里用
+
+        with mock.patch.object(deps, "missing", return_value=[]):
+            self.assertEqual(deps.hint(), "")
+            self.assertEqual(deps.packages([]), [])
+
+
 class CreatedFormatTests(unittest.TestCase):
     """接口给 UTC，显示成本地时区、精确到分钟。"""
 
