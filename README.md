@@ -222,8 +222,8 @@ fonts = "western"
 颜色：名字加粗；档位按等级着色（Max 洋红、Pro 青色、免费压暗）；组织和缺失值压暗。
 `ccs status` 会多出账号段：账号、档位、计费、组织、注册。
 
-要 sessionKey 用 `ccs key 003`：直接复制到 Windows 剪贴板，只显示前 18 个字符。
-加 `--show` 才完整打印。
+要 sessionKey 用 `ccs key 003`：完整打印，同时尝试复制到 Windows 剪贴板。
+`ccs status 003` 也会在最后单独打一行 sessionKey（表格太窄，单独一行才完整）。
 
 ⚠️ 抓取必须在浏览器里做。用 curl 带 cookie 请求会被 Cloudflare 拦掉，
 返回 `Just a moment...`。

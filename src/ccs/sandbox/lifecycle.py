@@ -103,14 +103,11 @@ def cmd_key(args) -> int:
         die(f"没有 session_key：先 ccs web {args.name} 登录一次，抓到了才有")
     for line in report.account_lines(acct):
         say(line)
-    if getattr(args, "show", False):
-        print(key)  # noqa: T201 - --show 就是直接打印 key
-    else:
-        say(f"sessionKey: {key[:18]}…（共 {len(key)} 字符）")
+    print(key)  # noqa: T201 - key 命令就是把完整 key 打到终端
     if copy_to_clipboard(key):
         say("已复制到剪贴板")
     else:
-        say("复制失败（没有 clip.exe），加 --show 直接打印")
+        say("复制失败（没有 clip.exe），上面的 key 可以直接选中")
     return 0
 
 
@@ -146,9 +143,15 @@ def cmd_status(args) -> int:
     account = store.read_account(args.name)
     pairs = report.status_pairs(info) + report.account_pairs(account)
     fallback = report.status_lines(info) + [f"{k:<8}: {v}" for k, v in report.account_pairs(account)]
+    key = str(account.get("session_key") or "")
+    if key:
+        # 放表格里会被列宽截断；单独一行，保证完整可复制
+        fallback.append(f"sessionKey: {key}")
     for line in fallback:
         log_line(line)
     ui.emit_pairs(pairs, fallback=fallback, styles=report.status_styles(pairs))
+    if key:
+        say(f"sessionKey: {key}")
     return 0
 
 

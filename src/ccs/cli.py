@@ -4,9 +4,46 @@ from __future__ import annotations
 
 import argparse
 import signal
+import sys
 
 from ccs.browser import process, tasks
 from ccs.sandbox import lifecycle
+
+USAGE = """ccs — Claude 注册沙盒
+
+最常用:
+  ccs new <名字>                   建沙盒（出口自动探测本机代理）
+  ccs web <名字>                   打开窗口，手工注册 / 养号
+  ccs ls                           列出所有沙盒
+  ccs status <名字>                看单个沙盒（含 sessionKey）
+
+建号与迁移:
+  ccs new <名字> [--exit 地址|direct]
+  ccs import <包> <名字>           从导出包新建（指纹和登录态一致）
+  ccs export <名字> [-o 文件]      导出身份包
+
+启动:
+  ccs web <名字>                   打开窗口，手工注册
+  ccs warmup <名字> [--prompt …]   养号：发一句预设的话
+  ccs refresh <名字>               探测会话是否还有效，刷新账号信息
+  ccs check <名字>                 无头自检（出口 IP / WebRTC，需要 Xvfb）
+
+管理:
+  ccs set-exit <名字> <地址|direct>
+  ccs key <名字>                   打印完整 sessionKey（同时尝试复制）
+  ccs mv <旧名> <新名>  /  ccs rm <名字>
+  ccs log <名字> [--lines 50]
+  ccs doctor                       检查环境、出口和系统库
+
+用法:
+  ccs <命令> [参数…]               每个命令的详细参数：ccs <命令> -h
+
+例子:
+  ccs new 004
+  ccs web 004
+  ccs key 004
+  ccs export 004 -o ~/004.bundle.tar.gz
+"""
 
 
 def _add_exit_flags(p) -> None:
@@ -80,9 +117,9 @@ def _add_manage_commands(sub) -> None:
     p.add_argument("exit", help="direct 或 socks5h://host:port")
     p.set_defaults(func=lifecycle.cmd_set_exit)
 
-    p = sub.add_parser("key", aliases=["sessionkey"], help="复制沙盒的 sessionKey")
+    p = sub.add_parser("key", aliases=["sessionkey"], help="打印沙盒的 sessionKey（完整）")
     p.add_argument("name")
-    p.add_argument("--show", action="store_true", help="直接打印完整 key")
+    p.add_argument("--show", action="store_true", help="兼容旧写法；现在默认就打印完整 key")
     p.set_defaults(func=lifecycle.cmd_key)
 
     p = sub.add_parser("mv", aliases=["rename"], help="给沙盒改名")
@@ -116,8 +153,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(USAGE, end="")  # noqa: T201 - 帮助就是打印
+        return 0
+    args = build_parser().parse_args(argv)
     process.install_signal_handler()
     try:
         return args.func(args)
