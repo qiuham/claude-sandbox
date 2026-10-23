@@ -19,7 +19,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from ccs import paths
+from ccs import paths, ui
 from ccs.errors import die, say
 from ccs.network import geo
 from ccs.sandbox import store
@@ -86,9 +86,9 @@ def export_bundle(name: str, output: Path, cfg: dict, pin: dict) -> int:
                 tar.add(tmpdir / item, arcname=item)
 
     size = output.stat().st_size
-    say(f"已导出: {output.resolve()}（{size / 1024:.1f} KB，{kept} 条 cookie）")
-    say(f"账号    : {account.get('email') or '-'}")
-    say("注意    : 包里含 sessionKey，等于把这个号的登录权一起给出去了")
+    say(ui.kv("已导出", f"{output.resolve()}（{size / 1024:.1f} KB，{kept} 条 cookie）"))
+    say(ui.kv("账号", f"{account.get('email') or '-'}"))
+    say(ui.kv("注意", "包里含 sessionKey，等于把这个号的登录权一起给出去了"))
     return 0
 
 
@@ -146,11 +146,11 @@ def import_bundle(bundle: Path, name: str, cfg: dict) -> int:
             "imported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         })
 
-    say(f"已导入: {name}（来自 {info.get('sandbox') or '未知沙盒'}）")
-    say(f"账号    : {info.get('email') or '-'}")
-    say(f"出口    : {exit_spec}")
+    say(ui.kv("已导入", f"{name}（来自 {info.get('sandbox') or '未知沙盒'}）"))
+    say(ui.kv("账号", f"{info.get('email') or '-'}"))
+    say(ui.kv("出口", exit_spec))
     if exit_ip:
         tail = f"（{label}）" if label else ""
-        say(f"原出口IP: {exit_ip}{tail}（首次启动会核对，不一致会拦住）")
-    say(f"下一步  : ccs web {name}")
+        say(ui.kv("原出口IP", f"{exit_ip}{tail}（首次启动会核对，不一致会拦住）"))
+    say(ui.kv("下一步", f"ccs web {name}"))
     return 0

@@ -74,7 +74,7 @@ def _table(title: str) -> Table:
 
 def emit_pairs(pairs: list[tuple[str, str]], *, title: str = "", fallback: list[str],
                styles: list[str] | None = None) -> None:
-    """两列（字段 : 值）的表格；没有 Rich 就逐行打印。"""
+    """两列（字段 : 值）的表格；值太长就在第二列折行，不截断。"""
     if not rich_available():
         for line in fallback:
             print(line)  # noqa: T201 - CLI 输出边界
@@ -82,8 +82,35 @@ def emit_pairs(pairs: list[tuple[str, str]], *, title: str = "", fallback: list[
 
     table = _table(title)
     table.add_column("", style="dim", no_wrap=True)
-    table.add_column("", overflow="ellipsis", no_wrap=True)
+    table.add_column("", overflow="fold")
     for index, (key, value) in enumerate(pairs):
         style = styles[index] if styles and index < len(styles) else ""
         table.add_row(key, _cell(value, style))
     _console().print(table)
+
+
+def emit_note(label: str, value: str) -> None:
+    """一行“标签 + 完整值”，不截断：sessionKey、长候选这种不适合放表格。"""
+    emit_pairs([(label, value)], fallback=[kv(label, value)])
+
+
+def _display_len(text: str) -> int:
+    """标签占几列：中文算 2 列，和终端对齐用。"""
+    try:
+        from rich.cells import cell_len  # noqa: PLC0415 - 只在渲染时导入
+
+        return cell_len(text)
+    except Exception:  # noqa: BLE001 - 没装 Rich 就自己算
+        from unicodedata import east_asian_width  # noqa: PLC0415
+
+        return sum(2 if east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
+def kv(label: str, value: str, width: int = 10) -> str:
+    """纯文本的“标签: 值”，标签按显示宽度补齐，冒号对齐。"""
+    return f"{label}{' ' * max(1, width - _display_len(label))}: {value}"
+
+
+def indent(value: str, width: int = 10) -> str:
+    """续行：缩进到值那一列。"""
+    return " " * (width + 2) + value

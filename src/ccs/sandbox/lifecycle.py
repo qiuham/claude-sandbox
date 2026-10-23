@@ -52,9 +52,9 @@ def cmd_new(args) -> int:
     profile.mkdir()
     seed, created = store.seed_of(profile)
     if created:
-        say(f"指纹种子: {seed}（写入 seed.json，这个沙盒以后一直用它）")
+        say(ui.kv("指纹种子", f"{seed}（写入 seed.json，这个沙盒以后一直用它）"))
     say(f"已建沙盒 {args.name}（出口 {spec}，目录 {d}）")
-    say(f"下一步: ccs web {args.name}")
+    say(ui.kv("下一步", f"ccs web {args.name}"))
     return 0
 
 
@@ -101,9 +101,10 @@ def cmd_key(args) -> int:
     key = acct.get("session_key") or ""
     if not key:
         die(f"没有 session_key：先 ccs web {args.name} 登录一次，抓到了才有")
-    for line in report.account_lines(acct):
-        say(line)
-    print(key)  # noqa: T201 - key 命令就是把完整 key 打到终端
+    pairs = [("账号", str(acct.get("email") or "-")),
+             ("组织", str(acct.get("org_id") or "-")),
+             ("sessionKey", key)]
+    ui.emit_pairs(pairs, fallback=[ui.kv(k, v) for k, v in pairs])
     if copy_to_clipboard(key):
         say("已复制到剪贴板")
     else:
@@ -141,17 +142,16 @@ def cmd_status(args) -> int:
         print(json.dumps(info, ensure_ascii=False, indent=2))  # noqa: T201 - --json 输出就是打印
         return 0
     account = store.read_account(args.name)
-    pairs = report.status_pairs(info) + report.account_pairs(account)
-    fallback = report.status_lines(info) + [f"{k:<8}: {v}" for k, v in report.account_pairs(account)]
     key = str(account.get("session_key") or "")
+    pairs = report.status_pairs(info) + report.account_pairs(account)
     if key:
-        # 放表格里会被列宽截断；单独一行，保证完整可复制
-        fallback.append(f"sessionKey: {key}")
+        pairs.append(("sessionKey", key))
+    fallback = report.status_lines(info) + [ui.kv(k, v) for k, v in report.account_pairs(account)]
+    if key:
+        fallback.append(ui.kv("sessionKey", key))
     for line in fallback:
         log_line(line)
     ui.emit_pairs(pairs, fallback=fallback, styles=report.status_styles(pairs))
-    if key:
-        say(f"sessionKey: {key}")
     return 0
 
 
@@ -255,41 +255,41 @@ def cmd_doctor(_args) -> int:
     cfg = load_runtime()
     source = config.source_path()
 
-    say(f"沙盒目录  : {paths.root()}")
-    say(f"配置文件  : {source} {'有' if source.is_file() else '无（用内置默认）'}")
-    say(f"venv      : {'有' if paths.venv_python().is_file() else '没有 .venv'}")
-    say(f"DNS 中继  : {'有' if _relay_available() else '缺少 network/dns_relay.py'}")
+    say(ui.kv("沙盒目录", f"{paths.root()}"))
+    say(ui.kv("配置文件", f"{source} {'有' if source.is_file() else '无（用内置默认）'}"))
+    say(ui.kv("venv", "有" if paths.venv_python().is_file() else "没有 .venv"))
+    say(ui.kv("DNS 中继", "有" if _relay_available() else "缺少 network/dns_relay.py"))
     engine = _engine_version()
-    say(f"引擎      : {engine or '未安装（make setup）'}"
-        + (f" · 浏览器{'已下载' if _browser_ready() else '未下载（make setup）'}" if engine else ""))
-    say(f"富文本    : {'rich ' + rich_version() if rich_version() else '未装（退回纯文本）'}")
-    say(f"系统命令  : curl {_tool('curl')} · pgrep {_tool('pgrep')} · Xvfb {_tool('Xvfb')}"
-        + ("" if shutil.which("Xvfb") else "（Xvfb 只在 headless 时用）"))
+    say(ui.kv("引擎", f"{engine or '未安装（make setup）'}"
+              + (f" · 浏览器{'已下载' if _browser_ready() else '未下载（make setup）'}" if engine else "")))
+    say(ui.kv("富文本", "rich " + rich_version() if rich_version() else "未装（退回纯文本）"))
+    say(ui.kv("系统命令", f"curl {_tool('curl')} · pgrep {_tool('pgrep')} · Xvfb {_tool('Xvfb')}"
+              + ("" if shutil.which("Xvfb") else "（Xvfb 只在 headless 时用）")))
     found = [a for a, ok in discover.probe_all() if ok]
-    say("本机代理  : " + (" · ".join(found) if found else "没找到（new 时会走 direct）"))
+    say(ui.kv("本机代理", " · ".join(found) if found else "没找到（new 时会走 direct）"))
     udp_ip = stun.mapped_ip()
     if not udp_ip:
-        say("UDP 出口  : 拿不到（UDP 被挡或没网）")
+        say(ui.kv("UDP 出口", "拿不到（UDP 被挡或没网）"))
     elif str(cfg.get("exit") or "auto") == "direct":
-        say(f"UDP 出口  : {udp_ip}（direct：不经代理）")
+        say(ui.kv("UDP 出口", f"{udp_ip}（direct：不经代理）"))
     else:
-        say(f"UDP 出口  : {udp_ip}（不经代理）")
-        say("         有 SOCKS5 出口时 WebRTC 走代理；direct 时才强制关闭")
+        say(ui.kv("UDP 出口", f"{udp_ip}（不经代理）"))
+        say(ui.indent("有 SOCKS5 出口时 WebRTC 走代理；direct 时才强制关闭"))
     lack = deps.missing()
-    say("系统库    : " + ("齐" if not lack else f"缺 {len(lack)} 个 · {' '.join(lack)}"))
+    say(ui.kv("系统库", "齐" if not lack else f"缺 {len(lack)} 个 · {' '.join(lack)}"))
     if lack:
-        say(f"            sudo apt install -y {' '.join(deps.packages(lack))}")
+        say(ui.indent(f"sudo apt install -y {' '.join(deps.packages(lack))}"))
     build_pin(cfg)                    # 写错了在这里就报，不用等到启动
-    say(f"屏幕      : {cfg.get('screen') or 'auto（按种子生成）'} @ {cfg.get('dpr') or 1}x")
+    say(ui.kv("屏幕", f"{cfg.get('screen') or 'auto（按种子生成）'} @ {cfg.get('dpr') or 1}x"))
     fonts_desc = ("全部（含简繁中文）" if str(cfg.get("fonts")).lower() == "all"
                   else "去掉简繁中文字体")
-    say(f"字体      : {fonts_desc}")
+    say(ui.kv("字体", fonts_desc))
     scheme = str(cfg.get("color_scheme") or "dark").lower()
     scheme_label = {"dark": "深色（固定）", "light": "浅色（固定）"}.get(scheme, "跟随种子")
-    say(f"配色      : {scheme_label}")
-    say(f"出口 IP   : {'严格：变了就不启动' if cfg.get('strict_ip', True) else '宽松：变了只提示'}")
+    say(ui.kv("配色", scheme_label))
+    say(ui.kv("出口 IP", "严格：变了就不启动" if cfg.get("strict_ip", True) else "宽松：变了只提示"))
     say("")
     default = str(cfg.get("exit") or "auto")
     hint = {"auto": "（new 时自动找本机代理）", "direct": "（不走代理）"}.get(default, "")
-    say(f"出口      : {default}{hint}")
+    say(ui.kv("出口", f"{default}{hint}"))
     return 0

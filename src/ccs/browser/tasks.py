@@ -12,7 +12,7 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
-from ccs import config, errors, paths
+from ccs import config, errors, paths, ui
 from ccs.browser import crash, launcher, prefs, process
 from ccs.errors import die, log_line, say
 from ccs.network import DnsRelay, pick_exit, preflight, resolve_exit
@@ -244,20 +244,23 @@ def webrtc_verdict(candidates: list[str], exit_ip: str) -> str:
 
 
 def _headless_check(page, cfg: dict, exit_ip: str) -> int:
-    say(f"页面出口 IP : {page.inner_text('body').strip()}")
+    page_ip = page.inner_text("body").strip()
+    pairs = [("页面出口 IP", page_ip)]
     try:
         page.goto("https://www.cloudflare.com/", timeout=_timeouts(cfg)["goto_ms"])
         candidates = page.evaluate(WEBRTC_JS)
-        say(f"WebRTC 候选 : {json.dumps(candidates, ensure_ascii=False)}")
-        say(f"WebRTC 结论 : {webrtc_verdict(candidates, exit_ip)}")
+        pairs.append(("WebRTC 结论", webrtc_verdict(candidates, exit_ip)))
+        ui.emit_pairs(pairs, fallback=[ui.kv(k, v) for k, v in pairs])
+        ui.emit_note("WebRTC 候选", json.dumps(candidates, ensure_ascii=False))
     except Exception as exc:  # noqa: BLE001 - WebRTC 检测失败只提示，不影响自检退出
-        say(f"WebRTC 检测失败: {exc}")
+        pairs.append(("WebRTC", f"检测失败: {exc}"))
+        ui.emit_pairs(pairs, fallback=[ui.kv(k, v) for k, v in pairs])
     return 0
 
 
 def _say_account(page, name: str) -> None:
     if harvest_account(page, name):
-        say(f"账号    : {store.read_account(name).get('email') or '已记录'}")
+        ui.emit_note("账号", store.read_account(name).get("email") or "已记录")
 
 
 def _pick_prompt(name: str, prompts: list[str], cfg: dict) -> str:
@@ -319,12 +322,12 @@ def refresh_flow(page, name: str) -> int:
         account["alive_first_invalid_at"] = now
     store.write_account(name, account)
 
-    say(f"状态    : {REFRESH_TEXT[state]}")
-    say(f"检测时间: {now}")
+    pairs = [("状态", REFRESH_TEXT[state]), ("检测时间", str(now))]
     if account.get("alive_first_ok_at"):
-        say(f"首次正常: {account['alive_first_ok_at']}")
+        pairs.append(("首次正常", str(account["alive_first_ok_at"])))
     if account.get("alive_first_invalid_at"):
-        say(f"首次失效: {account['alive_first_invalid_at']}")
+        pairs.append(("首次失效", str(account["alive_first_invalid_at"])))
+    ui.emit_pairs(pairs, fallback=[ui.kv(k, v) for k, v in pairs])
     log_line(f"刷新结果: {state} · {account.get('email', '')}")
     return 0 if state == "ok" else 1
 
@@ -426,9 +429,9 @@ def _prompts(cfg: dict) -> list[str]:
 def warmup_flow(page, name: str, prompt: str | None, cfg: dict) -> int:
     prompts = _prompts(cfg)
     prompt = (prompt or _pick_prompt(name, prompts, cfg)).strip()
-    say(f"对话    : 发送「{prompt}」")
+    say(ui.kv("对话", f"发送「{prompt}」"))
     result = do_warmup(page, prompt, cfg)
-    say(f"对话    : {WARMUP_TEXT.get(result, result)}")
+    say(ui.kv("对话", WARMUP_TEXT.get(result, result)))
     log_line(f"对话结果: {result} · {prompt}")
     harvest_account(page, name)
     if result == "ok":
@@ -469,10 +472,10 @@ def _say_crash(session, pid: int) -> int:
     reason = crash.latest_reason(session.started_at)
     say("浏览器进程已经退出（可能是崩溃），沙盒数据已保留")
     if reason:
-        say(f"崩溃原因: {reason[:160]}")
+        say(ui.kv("崩溃原因", reason[:160]))
         hint = crash.explain(reason)
         if hint:
-            say(f"           {hint}")
+            say(ui.indent(hint))
     log_line(f"浏览器 PID {pid} 不在了，按崩溃处理；原因 {reason[:200]}")
     return 0
 
@@ -515,9 +518,9 @@ def run(args, *, mode: str) -> int:
         if proxy.startswith(("socks5://", "socks5h://")):
             relay = DnsRelay(proxy, cfg, log=log_line)
             proxy = relay.start()
-            say("DNS     : 沙盒自带中继（DoH 查域名，代理只收 IP）")
+            say(ui.kv("DNS", "沙盒自带中继（DoH 查域名，代理只收 IP）"))
         elif proxy:
-            say("DNS     : 由代理自己解析（中继只支持 socks5 上游）")
+            say(ui.kv("DNS", "由代理自己解析（中继只支持 socks5 上游）"))
         process.clear_hooks()
         if relay:
             process.add_hook(relay.stop)

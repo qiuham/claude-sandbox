@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from ccs.ui import kv
+
 
 def ls_lines(rows: list[dict]) -> list[str]:
     """ls 的表头和每行；字段顺序固定。"""
@@ -25,21 +27,13 @@ def status_lines(info: dict) -> list[str]:
     """status 的每个字段；顺序固定。"""
     seed = info.get("seed")
     return [
-        f"名称      : {info.get('name')}",
-        f"目录      : {info.get('dir')}",
-        f"出口      : {info.get('exit', '-')}",
-        f"出口 IP   : {exit_ip_label(info)}",
-        f"指纹种子  : {seed if seed is not None else '-'}",
-        f"profile   : {info.get('profile_bytes', 0) / 1024 / 1024:.1f} MB",
-        f"创建时间  : {info.get('created_at', '-')}",
-    ]
-
-
-def account_lines(account: dict) -> list[str]:
-    """key 命令里的账号两行；顺序固定。"""
-    return [
-        f"账 号: {account.get('email') or '-'}",
-        f"组织  : {account.get('org_id') or '-'}",
+        kv("名称", str(info.get("name"))),
+        kv("目录", str(info.get("dir"))),
+        kv("出口", str(info.get("exit", "-"))),
+        kv("出口 IP", exit_ip_label(info)),
+        kv("指纹种子", str(seed if seed is not None else "-")),
+        kv("profile", f"{info.get('profile_bytes', 0) / 1024 / 1024:.1f} MB"),
+        kv("创建时间", str(info.get("created_at", "-"))),
     ]
 
 
