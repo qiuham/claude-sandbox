@@ -29,7 +29,7 @@ USAGE = """ccs — Claude 注册沙盒
   ccs check <名字>                 无头自检（出口 IP / WebRTC，需要 Xvfb）
 
 管理:
-  ccs set-exit <名字> <地址|direct>
+  ccs set proxy <名字> <地址|direct>
   ccs key <名字>                   打印完整 sessionKey（同时尝试复制）
   ccs mv <旧名> <新名>  /  ccs rm <名字>
   ccs log <名字> [--lines 50]
@@ -112,10 +112,12 @@ def _add_manage_commands(sub) -> None:
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=lifecycle.cmd_status)
 
-    p = sub.add_parser("set-exit", help="改沙盒的出口")
-    p.add_argument("name")
-    p.add_argument("exit", help="direct 或 socks5h://host:port")
-    p.set_defaults(func=lifecycle.cmd_set_exit)
+    p = sub.add_parser("set", help="修改沙盒设置")
+    set_sub = p.add_subparsers(dest="set_command", required=True)
+    q = set_sub.add_parser("proxy", help="改沙盒的出口")
+    q.add_argument("name")
+    q.add_argument("exit", help="direct 或 socks5h://host:port")
+    q.set_defaults(func=lifecycle.cmd_set_proxy)
 
     p = sub.add_parser("key", help="打印沙盒的 sessionKey（完整）")
     p.add_argument("name")

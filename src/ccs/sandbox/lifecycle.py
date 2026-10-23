@@ -155,7 +155,7 @@ def cmd_status(args) -> int:
     return 0
 
 
-def cmd_set_exit(args) -> int:
+def cmd_set_proxy(args) -> int:
     cfg = load_runtime()
     spec, _proxy = resolve_exit(args.exit, cfg)
     meta = store.read_meta(args.name)

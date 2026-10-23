@@ -72,8 +72,8 @@ class SandboxCliTests(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("已存在", r.stderr)
 
-    def test_status_and_set_exit(self):
-        """status 看沙盒；set-exit 改出口（并清掉旧的出口 IP 记忆）。"""
+    def test_status_and_set_proxy(self):
+        """status 看沙盒；set proxy 改出口（并清掉旧的出口 IP 记忆）。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
             self.assertEqual(self.run_cli("new", "t1", "--exit", "direct", root=root).returncode, 0)
@@ -83,12 +83,12 @@ class SandboxCliTests(unittest.TestCase):
             self.assertEqual(info["exit"], "direct")
             self.assertIsInstance(info["seed"], int)
 
-            r = self.run_cli("set-exit", "t1", "socks5h://1.2.3.4:1080", root=root)
+            r = self.run_cli("set", "proxy", "t1", "socks5h://1.2.3.4:1080", root=root)
             self.assertEqual(r.returncode, 0, r.stderr)
             meta = json.loads((root / "t1" / "meta.json").read_text(encoding="utf-8"))
             self.assertEqual(meta["exit"], "socks5h://1.2.3.4:1080")
 
-            r = self.run_cli("set-exit", "t1", "cox", root=root)   # 名字已经不支持
+            r = self.run_cli("set", "proxy", "t1", "cox", root=root)   # 名字已经不支持
             self.assertNotEqual(r.returncode, 0)
 
     def test_ls_json_lists_slots(self):

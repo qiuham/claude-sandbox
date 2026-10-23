@@ -12,7 +12,7 @@
 | `ccs status <名字> [--json]` | 沙盒详情（出口、种子、profile 大小） |
 | `ccs web <名字>` | 打开窗口，手工注册 |
 | `ccs check <名字>` | 无头自检（出口 IP / WebRTC） |
-| `ccs set-exit <名字> <地址\|direct>` | 改沙盒出口 |
+| `ccs set proxy <名字> <地址\|direct>` | 改沙盒出口 |
 | `ccs rm <名字> [--force]` | 删除沙盒（含 profile） |
 | `ccs doctor` | 检查环境和配置 |
 
@@ -87,7 +87,7 @@ ccs new profile2 --exit direct    # 显式不用代理
 ccs ls                            # 列出所有沙盒
 ccs status profile1               # 出口、种子、profile 大小
 ccs web profile1                  # 打开窗口
-ccs set-exit profile1 socks5h://127.0.0.1:7897
+ccs set proxy profile1 socks5h://127.0.0.1:7897
 ccs rm profile2                   # 删除前会要求输入 yes
 ```
 
