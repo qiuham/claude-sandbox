@@ -233,7 +233,7 @@ if __name__ == "__main__":
 
 
 class WarmupTests(unittest.TestCase):
-    """养号的三态判断：没输入框 / 没发出去 / 发了没回 / 成功。"""
+    """对话的三态判断：没输入框 / 没发出去 / 发了没回 / 成功。"""
 
     class FakeKeyboard:
         def type(self, _text, delay=0):

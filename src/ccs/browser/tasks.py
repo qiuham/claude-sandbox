@@ -91,7 +91,7 @@ def harvest_account(page, name: str) -> dict | None:
         "session_key": cookies.get("sessionKey", ""),
         "captured_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
-    merged = {**store.read_account(name), **info}   # 保留养号统计、存活记录等字段
+    merged = {**store.read_account(name), **info}   # 保留对话统计、存活记录等字段
     if not store.write_account(name, merged):
         log_line("写 account.json 失败")
         return None
@@ -203,8 +203,8 @@ def do_warmup(page, prompt: str, cfg: dict) -> str:
         _click_like_human(page, selector, warmup)
         _type_like_human(page, prompt, warmup)
         page.keyboard.press("Enter")
-    except Exception as exc:  # noqa: BLE001 - 点击/输入失败只算这次养号失败
-        log_line(f"养号失败：{type(exc).__name__}: {exc}")
+    except Exception as exc:  # noqa: BLE001 - 点击/输入失败只算这次对话失败
+        log_line(f"对话失败：{type(exc).__name__}: {exc}")
         return "not_sent"
 
     # 第一关：消息必须出现在页面上，否则只是键盘输入没生效
@@ -426,10 +426,10 @@ def _prompts(cfg: dict) -> list[str]:
 def warmup_flow(page, name: str, prompt: str | None, cfg: dict) -> int:
     prompts = _prompts(cfg)
     prompt = (prompt or _pick_prompt(name, prompts, cfg)).strip()
-    say(f"养号    : 发送「{prompt}」")
+    say(f"对话    : 发送「{prompt}」")
     result = do_warmup(page, prompt, cfg)
-    say(f"养号    : {WARMUP_TEXT.get(result, result)}")
-    log_line(f"养号结果: {result} · {prompt}")
+    say(f"对话    : {WARMUP_TEXT.get(result, result)}")
+    log_line(f"对话结果: {result} · {prompt}")
     harvest_account(page, name)
     if result == "ok":
         _remember_prompt(name, prompt)
@@ -438,7 +438,7 @@ def warmup_flow(page, name: str, prompt: str | None, cfg: dict) -> int:
 
 def wait_loop(session, name: str, timeout: int, cfg: dict) -> int:
     say("")
-    say("浏览器已打开。手工注册/养号完成后，直接关掉浏览器窗口即可退出。")
+    say("浏览器已打开。注册或日常对话完成后，直接关掉浏览器窗口即可退出。")
     t = _timeouts(cfg)
     pid = session.browser_pid
     deadline = time.time() + timeout if timeout else 0

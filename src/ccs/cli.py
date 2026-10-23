@@ -13,7 +13,7 @@ USAGE = """ccs — Claude 注册沙盒
 
 最常用:
   ccs new <名字>                   建沙盒（出口自动探测本机代理）
-  ccs web <名字>                   打开窗口，手工注册 / 养号
+  ccs web <名字>                   打开窗口，手工注册或日常对话
   ccs ls                           列出所有沙盒
   ccs status <名字>                看单个沙盒（含 sessionKey）
 
@@ -24,7 +24,7 @@ USAGE = """ccs — Claude 注册沙盒
 
 启动:
   ccs web <名字>                   打开窗口，手工注册
-  ccs warmup <名字> [--prompt …]   养号：发一句预设的话
+  ccs warmup <名字> [--prompt …]   日常对话：发一句预设的话并等回复
   ccs refresh <名字>               探测会话是否还有效，刷新账号信息
   ccs check <名字>                 无头自检（出口 IP / WebRTC，需要 Xvfb）
 
@@ -93,7 +93,7 @@ def _add_run_commands(sub) -> None:
     _add_safety_flags(p)
     p.set_defaults(func=tasks.cmd_check)
 
-    p = sub.add_parser("warmup", help="养号：发一句预设的话，等回复")
+    p = sub.add_parser("warmup", help="日常对话：发一句预设的话，等回复")
     p.add_argument("name")
     _add_exit_flags(p)
     p.add_argument("--prompt", default="", help="指定要说的话（默认随机挑一句）")
