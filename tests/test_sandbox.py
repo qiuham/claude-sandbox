@@ -1,5 +1,4 @@
 """sandbox CLI 的冒烟测试：不碰网络，只测本地目录和参数校验。"""
-import io
 import json
 import os
 import subprocess
@@ -7,7 +6,6 @@ import sys
 import tempfile
 import tomllib
 import unittest
-from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
@@ -21,12 +19,12 @@ from ccs import config as ccs_config  # noqa: E402
 class SandboxCliTests(unittest.TestCase):
     def run_cli(self, *args, root: Path, config: Path | None = None, stdin: str | None = None):
         env = dict(os.environ, SANDBOX_ROOT=str(root))
-        env["SANDBOX_CONFIG"] = str(config) if config else str(Path(root).parent / "nope.json")
+        env["SANDBOX_CONFIG"] = str(config) if config else str(Path(root).parent / "nope.toml")
         return subprocess.run([str(CLI), *args], capture_output=True, text=True,  # noqa: S603 - 跑的是本仓库的 CLI，参数固定
                               env=env, timeout=30, input=stdin, check=False)
 
     def write_config(self, path: Path, default_exit: str) -> Path:
-        path.write_text(json.dumps({"exit": default_exit}), encoding="utf-8")
+        path.write_text(f'exit = "{default_exit}"\n', encoding="utf-8")
         return path
 
     def test_no_config_means_auto(self):
@@ -42,7 +40,7 @@ class SandboxCliTests(unittest.TestCase):
         """配了 exit，新沙盒默认走它。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
-            cfg = self.write_config(Path(tmp) / "config.json", "socks5h://127.0.0.1:7897")
+            cfg = self.write_config(Path(tmp) / "config.toml", "socks5h://127.0.0.1:7897")
             r = self.run_cli("new", "demo", root=root, config=cfg)
             self.assertEqual(r.returncode, 0, r.stderr)
             meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
@@ -54,7 +52,7 @@ class SandboxCliTests(unittest.TestCase):
     def test_explicit_exit_overrides_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "sandboxes"
-            cfg = self.write_config(Path(tmp) / "config.json", "socks5h://127.0.0.1:7897")
+            cfg = self.write_config(Path(tmp) / "config.toml", "socks5h://127.0.0.1:7897")
             r = self.run_cli("new", "demo", "--exit", "direct", root=root, config=cfg)
             self.assertEqual(r.returncode, 0, r.stderr)
             meta = json.loads((root / "demo" / "meta.json").read_text(encoding="utf-8"))
@@ -116,36 +114,36 @@ class SandboxCliTests(unittest.TestCase):
 
     def test_doctor_says_direct_when_unconfigured(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.json")
+            r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.toml")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("auto（new 时自动找本机代理）", r.stdout)
 
     def test_doctor_finds_dns_relay(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.json")
+            r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.toml")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertRegex(r.stdout, r"DNS 中继\s*: 有")
 
     def test_screen_defaults_to_2k(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.json")
+            r = self.run_cli("doctor", root=Path(tmp) / "s", config=Path(tmp) / "nope.toml")
             self.assertRegex(r.stdout, r"屏幕\s*: 2560x1440 @ 1.5x")
 
     def test_screen_config_and_auto(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cfg = Path(tmp) / "config.json"
-            cfg.write_text(json.dumps({"screen": "1920x1080"}), encoding="utf-8")
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text('screen = "1920x1080"\n', encoding="utf-8")
             r = self.run_cli("doctor", root=Path(tmp) / "s", config=cfg)
             self.assertRegex(r.stdout, r"屏幕\s*: 1920x1080")
 
-            cfg.write_text(json.dumps({"screen": "auto"}), encoding="utf-8")
+            cfg.write_text('screen = "auto"\n', encoding="utf-8")
             r = self.run_cli("doctor", root=Path(tmp) / "s", config=cfg)
             self.assertIn("auto", r.stdout)
 
     def test_screen_rejects_garbage(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cfg = Path(tmp) / "config.json"
-            cfg.write_text(json.dumps({"screen": "big"}), encoding="utf-8")
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text('screen = "big"\n', encoding="utf-8")
             r = self.run_cli("doctor", root=Path(tmp) / "s", config=cfg)
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("screen 写法不对", r.stderr)
@@ -159,7 +157,7 @@ class ConfigTomlTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"SANDBOX_CONFIG": str(path)}):
                 return ccs_config.load_config()
 
-    def test_toml_defaults_cover_migrated_constants(self):
+    def test_toml_defaults_cover_known_constants(self):
         """原先写死的常量都在默认配置里。"""
         cfg = ccs_config.DEFAULT_CONFIG
         self.assertEqual(len(cfg["warmup"]["prompts"]), 4)
@@ -230,21 +228,6 @@ class ConfigTomlTests(unittest.TestCase):
         self.assertEqual(cfg["browser"]["timeouts"]["goto_ms"], 90000)
         self.assertEqual(cfg["browser"]["prefs"]["network.trr.mode"], 2)
         self.assertFalse(cfg["browser"]["prefs"]["browser.cache.disk.enable"])
-
-    def test_explicit_json_is_read_without_writing_anything(self):
-        """显式指定旧 JSON 时照读，不迁移、不写文件（测试和临时配置走这条路）。"""
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "config.json"
-            path.write_text(json.dumps({"exit": "direct", "screen": "auto"}),
-                            encoding="utf-8")
-            err = io.StringIO()
-            with mock.patch.dict(os.environ, {"SANDBOX_CONFIG": str(path)}), \
-                    redirect_stderr(err):
-                cfg = ccs_config.load_config()
-            files = sorted(p.name for p in Path(tmp).iterdir())
-        self.assertEqual(cfg["screen"], "auto")
-        self.assertEqual(files, ["config.json"])
-        self.assertEqual(err.getvalue(), "")
 
     def test_toml_config_used_by_cli(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -8,7 +8,7 @@
 | 命令 | 作用 |
 |---|---|
 | `ccs new <名字> [--exit 地址\|direct]` | 新建沙盒 |
-| `ccs ls [--json]`（别名 `list`） | 列出沙盒 |
+| `ccs ls [--json]` | 列出沙盒 |
 | `ccs status <名字> [--json]` | 沙盒详情（出口、种子、profile 大小） |
 | `ccs web <名字>` | 打开窗口，手工注册 |
 | `ccs check <名字>` | 无头自检（出口 IP / WebRTC） |
@@ -44,8 +44,6 @@ WSL 的 NAT 模式下还会试默认网关。做一次 SOCKS5 握手再 CONNECT 
 ```toml
 exit = "socks5h://127.0.0.1:7897"
 ```
-
-旧版的 `~/.config/claude-sandbox/config.json` 仍然能读，启动时会提示"已迁移"。
 
 * `exit` 可以是任何 `socks5h://` / `http://` 地址；出口优先用 `socks5h://`。
 * 命令行 `--exit <地址>` 或 `--exit direct` 优先于配置。
@@ -361,7 +359,7 @@ make lint    # ruff：F/E/B/SIM/C90/RUF，圈复杂度上限 12
 | 模块 | 职责 |
 |---|---|
 | `cli.py` | 参数解析和分发，不含逻辑 |
-| `config.py` | TOML 读取、默认值、校验、旧 JSON 迁移 |
+| `config.py` | TOML 读取、默认值、校验 |
 | `paths.py` | 所有路径 |
 | `errors.py` | `die()` / `say()` / `log_line()` |
 | `sandbox/model.py` | `Sandbox` dataclass |

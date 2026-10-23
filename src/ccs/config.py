@@ -1,7 +1,6 @@
-"""配置：TOML 读取、默认值、旧 JSON 迁移、基本校验。
+"""配置：TOML 读取、默认值、基本校验。
 
 新配置：~/.config/claude-sandbox/ccs.toml（见仓库根的 ccs.toml.example）。
-旧配置：~/.config/claude-sandbox/config.json。旧文件存在时照常读取，并提示已迁移。
 环境变量 SANDBOX_CONFIG 可以指定任意一个配置文件（JSON 或 TOML）。
 环境变量 SANDBOX_ROOT 覆盖 [paths].root。
 """
@@ -12,7 +11,6 @@ import copy
 import json
 import os
 import re
-import sys
 import tomllib
 from pathlib import Path
 
@@ -20,7 +18,6 @@ from ccs.errors import die
 
 DEFAULT_CONFIG_DIR = Path("~/.config/claude-sandbox").expanduser()
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "ccs.toml"
-LEGACY_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.json"
 
 # 沙盒的浏览器偏好：目标只有一个 —— DNS 不经过本机、也不经过 Clash 的解析器。
 # 做法：DoH only（mode=3），DoH 请求本身走同一条代理，所以解析发生在出口侧。
@@ -158,7 +155,6 @@ DEFAULT_CONFIG = {
 }
 
 _SOURCE_PATH: Path | None = None
-_MIGRATED_FROM: Path | None = None
 
 
 def config_file_path() -> Path:
@@ -174,9 +170,6 @@ def source_path() -> Path:
     return _SOURCE_PATH or config_file_path()
 
 
-def migrated_from() -> Path | None:
-    return _MIGRATED_FROM
-
 
 def _read(path: Path) -> dict:
     try:
@@ -184,14 +177,8 @@ def _read(path: Path) -> dict:
     except OSError as exc:
         die(f"配置文件读不了: {path}: {exc}")
     try:
-        if path.suffix.lower() != ".toml":
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                data = tomllib.loads(text)
-        else:
-            data = tomllib.loads(text)
-    except (json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
         die(f"配置文件读不了: {path}: {exc}")
     if not isinstance(data, dict):
         die(f"配置文件读不了: {path}: 顶层必须是表（section）")
@@ -296,51 +283,14 @@ def write_toml(cfg: dict, path: Path) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def migrate_legacy_json(cfg: dict, source: Path) -> Path | None:
-    """把旧 config.json 落成 ccs.toml，旧文件改名，避免每次启动都提示。"""
-    target = DEFAULT_CONFIG_FILE
-    try:
-        write_toml(cfg, target)
-        source.rename(source.with_name(source.name + ".migrated"))
-    except OSError as exc:
-        print(f"配置: 迁移失败（{exc}），继续用旧文件", file=sys.stderr, flush=True)  # noqa: T201 - 迁移提示写到 stderr
-        return None
-    return target
-
-
 def load_config() -> dict:
-    """读配置。没有文件就用默认值；旧 config.json 迁移成 TOML 后不再提示。"""
-    global _SOURCE_PATH, _MIGRATED_FROM  # noqa: PLW0603 - 进程级单例，启动时设置一次
+    """读配置。没有文件就用默认值。"""
+    global _SOURCE_PATH  # noqa: PLW0603 - 进程级单例，启动时设置一次
     cfg = copy.deepcopy(DEFAULT_CONFIG)
-    explicit = bool(os.environ.get("SANDBOX_CONFIG"))
     path = config_file_path()
-    chosen: Path | None = None
-    legacy = False
-
-    if explicit:
-        # 显式指定就照读，不迁移（测试和临时配置都走这条路）
-        if path.is_file():
-            chosen = path
-    elif path.is_file():
-        chosen = path
-    elif LEGACY_CONFIG_FILE.is_file():
-        chosen = LEGACY_CONFIG_FILE
-        legacy = True
-
-    if chosen is not None:
-        _merge(cfg, _read(chosen))
-    if legacy:
-        target = migrate_legacy_json(cfg, LEGACY_CONFIG_FILE)
-        if target is not None:
-            chosen = target
-            print(  # noqa: T201 - 迁移提示写到 stderr
-                f"配置: 已迁移到 {target}（旧的改名为 {LEGACY_CONFIG_FILE.name}.migrated）",
-                file=sys.stderr,
-                flush=True,
-            )
-
-    _SOURCE_PATH = chosen or path
-    _MIGRATED_FROM = None
+    if path.is_file():
+        _merge(cfg, _read(path))
+    _SOURCE_PATH = path
     return cfg
 
 

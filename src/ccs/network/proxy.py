@@ -44,9 +44,4 @@ def pick_exit(args, meta: dict | None = None) -> str:
     for value in (getattr(args, "proxy", None), getattr(args, "exit", None)):
         if value:
             return value
-    spec = str((meta or {}).get("exit") or "")
-    # 旧版本存过名字（cox 之类），现在只认 direct/地址；失效就当没记录。
-    if spec and spec != "direct" and not is_proxy_spec(spec):
-        say(f"注意    : 沙盒记录的出口 {spec!r} 已失效，改用默认出口")
-        return ""
-    return spec
+    return str((meta or {}).get("exit") or "")

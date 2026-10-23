@@ -103,7 +103,7 @@ def _add_run_commands(sub) -> None:
 
 
 def _add_manage_commands(sub) -> None:
-    p = sub.add_parser("ls", aliases=["list"], help="列出沙盒")
+    p = sub.add_parser("ls", help="列出沙盒")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=lifecycle.cmd_list)
 
@@ -117,17 +117,16 @@ def _add_manage_commands(sub) -> None:
     p.add_argument("exit", help="direct 或 socks5h://host:port")
     p.set_defaults(func=lifecycle.cmd_set_exit)
 
-    p = sub.add_parser("key", aliases=["sessionkey"], help="打印沙盒的 sessionKey（完整）")
+    p = sub.add_parser("key", help="打印沙盒的 sessionKey（完整）")
     p.add_argument("name")
-    p.add_argument("--show", action="store_true", help="兼容旧写法；现在默认就打印完整 key")
     p.set_defaults(func=lifecycle.cmd_key)
 
-    p = sub.add_parser("mv", aliases=["rename"], help="给沙盒改名")
+    p = sub.add_parser("mv", help="给沙盒改名")
     p.add_argument("old")
     p.add_argument("new")
     p.set_defaults(func=lifecycle.cmd_mv)
 
-    p = sub.add_parser("rm", aliases=["remove"], help="删除沙盒（含 profile）")
+    p = sub.add_parser("rm", help="删除沙盒（含 profile）")
     p.add_argument("name")
     p.add_argument("--force", action="store_true", help="不确认，直接删")
     p.set_defaults(func=lifecycle.cmd_rm)

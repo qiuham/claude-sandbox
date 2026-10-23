@@ -68,10 +68,8 @@ def plan_style(label: str) -> str:
 
 
 def warmup_count(account: dict) -> int:
-    """对话次数。老数据没有计数但有最近一次时间，按 1 次算。"""
-    if account.get("warmup_count"):
-        return int(account["warmup_count"])
-    return 1 if account.get("last_warmup_at") else 0
+    """对话次数。"""
+    return int(account.get("warmup_count") or 0)
 
 
 def format_created(value: str) -> str:
