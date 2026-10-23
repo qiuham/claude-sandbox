@@ -120,9 +120,9 @@ DEFAULT_CONFIG = {
         "click_dwell_min_ms": 120,  # 点击前停顿
         "click_dwell_max_ms": 400,      # 上下浮动
         "send_confirm_s": 30,
-        "reply_wait_s": 90,
+        "reply_wait_s": 120,
         "poll_interval_s": 2,
-        "min_growth": 120,
+        "min_growth": 20,         # 一句话的回复大约 20～40 个字符
     },
     "paths": {
         "root": "~/sandboxes",

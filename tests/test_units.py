@@ -243,9 +243,10 @@ class WarmupTests(unittest.TestCase):
             pass
 
     class FakePage:
-        def __init__(self, texts, *, has_input=True):
+        def __init__(self, texts, *, has_input=True, composer=("",)):
             self.texts = list(texts)
             self.has_input = has_input
+            self.composer = list(composer)
             self.keyboard = WarmupTests.FakeKeyboard()
 
         def wait_for_selector(self, _sel, timeout=0):
@@ -262,6 +263,12 @@ class WarmupTests(unittest.TestCase):
                 return self.texts.pop(0)
             return self.texts[0]
 
+        def eval_on_selector(self, _sel, _expr):
+            """输入框文字：按顺序取，最后一项一直重复。"""
+            if len(self.composer) > 1:
+                return self.composer.pop(0)
+            return self.composer[0]
+
     def cfg(self):
         cfg = copy.deepcopy(config.DEFAULT_CONFIG)
         cfg["warmup"].update({"poll_interval_s": 0, "send_confirm_s": 0.05,
@@ -272,8 +279,8 @@ class WarmupTests(unittest.TestCase):
         page = self.FakePage(["x"], has_input=False)
         self.assertEqual(do_warmup(page, "你好", self.cfg()), "no_input")
 
-    def test_message_never_appears(self):
-        page = self.FakePage(["页面内容没有那句话"])
+    def test_send_never_clears_composer(self):
+        page = self.FakePage(["页面内容"], composer=("你好",))
         self.assertEqual(do_warmup(page, "你好", self.cfg()), "not_sent")
 
     def test_sent_but_no_reply(self):

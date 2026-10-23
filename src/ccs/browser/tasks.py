@@ -164,16 +164,26 @@ def _click_like_human(page, selector: str, warmup: dict) -> None:
         page.click(selector)
 
 
-def _wait_for_text(page, needle: str, cfg: dict, timeout: float) -> bool:
-    """等页面上出现某段文字（用来确认消息真的发出去了）。"""
+def _composer_text(page, selector: str) -> str | None:
+    """读输入框里的文字；读不到返回 None。零宽字符也算空。"""
+    try:
+        text = page.eval_on_selector(
+            selector, "el => el.innerText || el.textContent || ''")
+    except Exception:  # noqa: BLE001 - 页面关掉或选择器失效都当读不到
+        return None
+    return str(text).replace("\u200b", "").replace("\ufeff", "").strip()
+
+
+def _wait_for_sent(page, selector: str, cfg: dict) -> bool:
+    """输入框变空 = 消息真的发出去了；一直有字 = Enter 没生效。"""
     warmup = cfg["warmup"]
-    deadline = time.time() + timeout
+    deadline = time.time() + warmup["send_confirm_s"]
     while time.time() < deadline:
         time.sleep(warmup["poll_interval_s"])
-        try:
-            if needle in page.inner_text("body"):
-                return True
-        except Exception:  # noqa: BLE001 - 页面被关掉就当没等到
+        text = _composer_text(page, selector)
+        if text == "":
+            return True
+        if text is None:
             return False
     return False
 
@@ -207,15 +217,25 @@ def do_warmup(page, prompt: str, cfg: dict) -> str:
         log_line(f"对话失败：{type(exc).__name__}: {exc}")
         return "not_sent"
 
-    # 第一关：消息必须出现在页面上，否则只是键盘输入没生效
-    if not _wait_for_text(page, prompt, cfg, warmup["send_confirm_s"]):
+    # 第一关：输入框变空才算发出去。字还在输入框 = Enter 没生效。
+    if not _wait_for_sent(page, selector, cfg):
+        log_line("对话没发出：输入框没有变空")
         return "not_sent"
 
+    # 基准在输入框空了之后取，避免把还没清掉的提示文字算进去
     try:
         before = len(page.inner_text("body"))
     except Exception:  # noqa: BLE001 - 读不到就按 0 算
         before = 0
-    return "ok" if _wait_for_growth(page, before, cfg) else "no_reply"
+    if _wait_for_growth(page, before, cfg):
+        return "ok"
+    try:
+        after = len(page.inner_text("body"))
+    except Exception:  # noqa: BLE001 - 读不到就按 0 算
+        after = 0
+    log_line(f"对话没等到回复：页面 {after} 字符，基准 {before}，"
+             f"等了 {warmup['reply_wait_s']} 秒")
+    return "no_reply"
 
 
 def webrtc_public_ips(candidates: list[str]) -> list[str]:
