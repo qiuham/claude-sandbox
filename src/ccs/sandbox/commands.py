@@ -1,4 +1,4 @@
-"""沙盒生命周期命令：new / ls / status / mv / rm，以及按名字看信息的命令。"""
+"""沙盒命令：new / ls / status / key / set proxy / export / import / mv / rm / log / doctor。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import json
 import shutil
 import subprocess
 import time
-from contextlib import suppress
 from pathlib import Path
 
 from ccs import config, paths, report, ui
@@ -17,29 +16,13 @@ from ccs.errors import die, log_line, say
 from ccs.network import discover, pick_exit, resolve_exit, stun
 from ccs.sandbox import bundle, store
 from ccs.sandbox.model import Sandbox
+from ccs.sandbox.runtime import check_name, load_runtime
 from ccs.ui import rich_version
-
-
-def load_runtime() -> dict:
-    """读配置，并把路径、进程的模块参数配好。"""
-    cfg = config.load_config()
-    paths.configure(cfg, config.source_path())
-    process.configure(config_timeouts(cfg))
-    return cfg
-
-
-def config_timeouts(cfg: dict) -> dict:
-    return (cfg.get("browser") or {}).get("timeouts") or {}
-
-
-def _check_name(name: str) -> None:
-    if name in {".", ".."} or "/" in name or "\\" in name:
-        die("沙盒名字不能带路径分隔符")
 
 
 def cmd_new(args) -> int:
     cfg = load_runtime()
-    _check_name(args.name)
+    check_name(args.name)
     spec, _proxy = resolve_exit(pick_exit(args), cfg)
     d = paths.sandbox_dir(args.name)
     if d.exists():
@@ -112,32 +95,13 @@ def cmd_key(args) -> int:
     return 0
 
 
-def _profile_size(profile) -> int:
-    size = 0
-    for path in profile.rglob("*") if profile.is_dir() else []:
-        with suppress(OSError):
-            if path.is_file():
-                size += path.stat().st_size
-    return size
-
-
-def _read_seed(profile) -> int | None:
-    seed_file = profile / "seed.json"
-    if not seed_file.is_file():
-        return None
-    try:
-        return json.loads(seed_file.read_text(encoding="utf-8")).get("seed")
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
 def cmd_status(args) -> int:
     load_runtime()
     meta = store.read_meta(args.name)
     d = paths.sandbox_dir(args.name)
     profile = paths.profile_dir(args.name)
-    info = {**meta, "dir": str(d), "seed": _read_seed(profile),
-            "profile_bytes": _profile_size(profile)}
+    info = {**meta, "dir": str(d), "seed": store.read_seed(profile),
+            "profile_bytes": store.profile_size(profile)}
     if getattr(args, "json", False):
         print(json.dumps(info, ensure_ascii=False, indent=2))  # noqa: T201 - --json 输出就是打印
         return 0
@@ -180,14 +144,17 @@ def cmd_export(args) -> int:
 
 def cmd_import(args) -> int:
     cfg = load_runtime()
-    _check_name(args.name)
-    return bundle.import_bundle(Path(args.bundle), args.name, cfg)
+    name = str(getattr(args, "name", "") or "")
+    if name:
+        check_name(name)
+    return bundle.import_bundle(Path(args.bundle), name, cfg,
+                                force=bool(getattr(args, "force", False)))
 
 
 def cmd_mv(args) -> int:
     load_runtime()
     for name in (args.old, args.new):
-        _check_name(name)
+        check_name(name)
     src, dst = paths.sandbox_dir(args.old), paths.sandbox_dir(args.new)
     if not (src / paths.META_FILE_NAME).is_file():
         die(f"没有这个沙盒: {args.old}")

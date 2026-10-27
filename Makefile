@@ -34,7 +34,7 @@ test:
 	.venv/bin/python -m unittest discover -s tests -v
 
 lint:
-	uv run --frozen ruff check tests/ src/ ccs
+	uv run --frozen ruff check tests/ src/ ccs server
 
 version:
 	@cat VERSION

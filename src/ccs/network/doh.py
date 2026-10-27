@@ -142,8 +142,7 @@ class DohClient:
     def _query(self, name: str, qtype: str) -> dict:
         raw = upstream_connect(self.upstream, self.doh_ip, 443, self.connect_timeout)
         try:
-            ctx = ssl.create_default_context()
-            tls = ctx.wrap_socket(raw, server_hostname=self.doh_name)
+            tls = self._wrap_tls(raw)
         except Exception:
             raw.close()
             raise
@@ -153,6 +152,27 @@ class DohClient:
         finally:
             tls.close()
         return self._parse(body)
+
+    def _wrap_tls(self, raw):
+        """建 TLS。
+
+        **优先用 IP 当主机名**：IP 字面量不会发 SNI，按名字拦 DoH 的节点就拦不住。
+        Cloudflare 的证书里带 1.1.1.1 这个 IP，验证照样过。
+        证书不认这个 IP（换别的 DoH 服务商时可能）就退回用域名，带 SNI。
+        """
+        try:
+            ipaddress.ip_address(self.doh_ip)
+        except ValueError:
+            return ssl.create_default_context().wrap_socket(
+                raw, server_hostname=self.doh_name)
+        try:
+            return ssl.create_default_context().wrap_socket(
+                raw, server_hostname=self.doh_ip)
+        except ssl.SSLCertVerificationError:
+            raw.close()
+            raw2 = upstream_connect(self.upstream, self.doh_ip, 443, self.connect_timeout)
+            return ssl.create_default_context().wrap_socket(
+                raw2, server_hostname=self.doh_name)
 
     def _request(self, name: str, qtype: str) -> str:
         return (

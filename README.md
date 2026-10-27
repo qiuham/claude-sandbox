@@ -11,10 +11,12 @@
 | `ccs ls [--json]` | 列出沙盒 |
 | `ccs status <名字> [--json]` | 沙盒详情（出口、种子、profile 大小） |
 | `ccs web <名字>` | 打开窗口，手工注册 |
+| `ccs reg <名字> [--email …]` | 半自动注册：自动填表、取信里的登录链接，验证码留给人 |
 | `ccs check <名字>` | 无头自检（出口 IP / WebRTC） |
 | `ccs set proxy <名字> <地址\|direct>` | 改沙盒出口 |
 | `ccs rm <名字> [--force]` | 删除沙盒（含 profile） |
 | `ccs doctor` | 检查环境和配置 |
+| `ccs <命令> --record` | 录制点击/输入和截图，存到沙盒的 `record/` 目录 |
 
 ## 设计
 
@@ -194,6 +196,30 @@ fonts = "western"
 
 字体只改清单，不动字体文件。页面探测 `"Microsoft YaHei"` 会落到兜底字体，
 和一台没装中文语言包的 Windows 表现一致。
+
+## 半自动注册
+
+```bash
+ccs new 008 --exit socks5h://127.0.0.1:7897
+ccs reg 008
+```
+
+1. 自动建一个收信地址（默认 `hash(沙盒名+种子)[:10]@域名`，`--email` 可指定 local part）。
+2. 打开 claude.ai，像人一样填邮箱并提交。
+3. 每 3 秒查一次收信服务，抓到登录链接后在同一个窗口打开。
+4. 弹验证码就停下来，等你在窗口里做完，脚本继续等结果。
+5. 拿到 sessionKey 后记进 `account.json`，窗口关闭。
+
+不做的事：不重试、不判失败、不自动开始对话。节奏和物料由人控制。
+
+配置在 `ccs.toml`：
+
+```toml
+[mail]
+base = "https://api.justlovecode.com"
+admin_auth = "…"
+domain = "justlovecode.com"
+```
 
 ## 账号信息
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import random
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 from ccs import paths
@@ -82,3 +83,24 @@ def seed_of(profile: Path) -> tuple[int, bool]:
     seed = random.SystemRandom().randrange(1, 2**31)
     f.write_text(json.dumps({"seed": seed}), encoding="utf-8")
     return seed, True
+
+
+def profile_size(profile) -> int:
+    """profile 目录总字节数（读不到的文件跳过）。"""
+    size = 0
+    for path in profile.rglob("*") if profile.is_dir() else []:
+        with suppress(OSError):
+            if path.is_file():
+                size += path.stat().st_size
+    return size
+
+
+def read_seed(profile) -> int | None:
+    """seed.json 里的指纹种子；没有或写坏返回 None。"""
+    seed_file = profile / "seed.json"
+    if not seed_file.is_file():
+        return None
+    try:
+        return json.loads(seed_file.read_text(encoding="utf-8")).get("seed")
+    except (OSError, json.JSONDecodeError):
+        return None

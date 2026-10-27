@@ -109,20 +109,22 @@ DEFAULT_CONFIG = {
         "listen_port": 0,          # 0 = 每次启动挑一个空闲端口
         "connect_timeout_s": 15,
         "client_timeout_s": 30,
+        # DoH 失败时怎么办：stop = 报错停下（默认，保证不泄露）；
+        # proxy = 退回让上游代理解析（能用，但解析交给代理了）
+        "on_failure": "stop",
     },
     "warmup": {
         "prompts": WARM_PROMPTS,
-        "type_delay_ms": 240,      # 每个字的基准间隔（毫秒），真人大概这个量级
-        "type_jitter_ms": 70,
-        "think_every_chars": 18,   # 每打这么多字停一下，像在想
-        "think_pause_min_ms": 250,
-        "think_pause_max_ms": 700,
-        "click_dwell_min_ms": 120,  # 点击前停顿
-        "click_dwell_max_ms": 400,      # 上下浮动
         "send_confirm_s": 30,
         "reply_wait_s": 120,
         "poll_interval_s": 2,
         "min_growth": 20,         # 一句话的回复大约 20～40 个字符
+    },
+    "mail": {
+        # 收信服务（Cloudflare Worker）。base 是 API 域名，不是网页域名。
+        "base": "",
+        "admin_auth": "",
+        "domain": "",
     },
     "paths": {
         "root": "~/sandboxes",
@@ -215,7 +217,7 @@ def _merge_flat(cfg: dict, data: dict) -> None:
 
 def _merge(cfg: dict, data: dict) -> None:
     _merge_flat(cfg, data)
-    for key in ("dns", "warmup", "paths"):
+    for key in ("dns", "warmup", "paths", "mail"):
         if key in data:
             if not isinstance(data[key], dict):
                 die(f"配置 {key} 必须是表（section）")
@@ -292,6 +294,11 @@ def load_config() -> dict:
         _merge(cfg, _read(path))
     _SOURCE_PATH = path
     return cfg
+
+
+def config_timeouts(cfg: dict) -> dict:
+    """`[browser.timeouts]` 段；进程、启动、对话都用它。"""
+    return (cfg.get("browser") or {}).get("timeouts") or {}
 
 
 def parse_screen(spec) -> dict:

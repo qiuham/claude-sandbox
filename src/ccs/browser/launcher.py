@@ -174,7 +174,7 @@ def _context_kwargs(profile: Path, *, headless: bool, proxy: str,
         "seed": store.seed_of(profile)[0],
         "headless": headless,
         "humanize": float(cfg.get("humanize_s") or 1.5),
-        "locale": "auto",              # 按出口 IP 的地区选语言
+        "locale": "en-US",             # 固定英文：页面结构只对一套语言，自动化更好认
         "profile_dir": str(profile),
         "extra_prefs": cfg["browser"]["prefs"],
     }
@@ -208,8 +208,15 @@ def open_session(name: str, proxy: str, cfg: dict, *,  # noqa: PLR0913 - 启动�
         os.environ.pop("STEALTHFOX_WEBRTC_PUBLIC_IP", None)
     kw = _context_kwargs(profile, headless=headless, proxy=proxy, pin=pin, cfg=cfg)
     fit_window = bool(cfg.get("fit_window", True))
-    bctx, browser = open_browser(profile, engine, kw,
-                                 fit_window=fit_window, cfg=cfg)
+    try:
+        bctx, browser = open_browser(profile, engine, kw,
+                                     fit_window=fit_window, cfg=cfg)
+    except Exception as exc:
+        if type(exc).__name__ != "GeoTimezoneError":
+            raise
+        die("出口探测失败：代理连不上用来查 IP 的网站。\n"
+            "多半是当前出口节点坏了（比如连不上 DoH），换一个节点再启动。\n"
+            f"{exc}")
     pid = browser_pid(profile)
     page, closed = _prepare_page(browser, cfg)
     return Session(context=bctx, page=page, closed=closed, browser_pid=pid,

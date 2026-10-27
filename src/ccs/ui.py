@@ -114,3 +114,49 @@ def kv(label: str, value: str, width: int = 10) -> str:
 def indent(value: str, width: int = 10) -> str:
     """续行：缩进到值那一列。"""
     return " " * (width + 2) + value
+
+
+def emit_sections(sections: list[tuple[str, list[tuple[str, str]]]], *,
+                  intro: str = "", footer: str = "") -> None:
+    """分组的两列帮助（命令 + 说明），像 docker 那种。
+
+    命令里有 `[名字…]` 这种方括号，所以一律走 Text，不让 Rich 当标记解析。
+    纯文本兜底按显示宽度补齐：中文占两列，用字符数补会错位。
+    """
+    if not rich_available():
+        _plain_sections(sections, intro=intro, footer=footer)
+        return
+
+    console = _console()
+    if intro:
+        console.print(intro, markup=False, highlight=False)
+    for title, rows in sections:
+        table = _table("")
+        table.title = title
+        table.title_justify = "left"
+        table.title_style = "bold"
+        table.pad_edge = False
+        table.add_column("", no_wrap=True, min_width=4)
+        table.add_column("", overflow="fold", style="dim")
+        for command, note in rows:
+            table.add_row(_cell(f"  {command}", ""), _cell(note, ""))
+        console.print()
+        console.print(table)
+    if footer:
+        console.print()
+        console.print(footer, markup=False, highlight=False)
+
+
+def _plain_sections(sections: list[tuple[str, list[tuple[str, str]]]], *,
+                    intro: str, footer: str) -> None:
+    width = max((_display_len(command) for _, rows in sections for command, _ in rows),
+                default=0) + 2
+    if intro:
+        print(intro)  # noqa: T201 - CLI 输出边界
+    for title, rows in sections:
+        print(f"\n{title}")  # noqa: T201 - CLI 输出边界
+        for command, note in rows:
+            pad = " " * max(2, width - _display_len(command))
+            print(f"  {command}{pad}{note}")  # noqa: T201 - CLI 输出边界
+    if footer:
+        print(f"\n{footer}")  # noqa: T201 - CLI 输出边界

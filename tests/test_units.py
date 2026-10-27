@@ -18,16 +18,21 @@ sys.path.insert(0, str(SRC))
 
 from ccs import config, paths, report  # noqa: E402
 from ccs.browser import crash  # noqa: E402
+from ccs.browser.chat import do_warmup  # noqa: E402
 from ccs.browser.launcher import webrtc_declared_ip  # noqa: E402
-from ccs.browser.tasks import (  # noqa: E402
-    _parse_csv,
-    _parse_prompt_file,
-    _pick_prompt,
-    _read_prompt_dir,
-    do_warmup,
-    webrtc_public_ips,
-    webrtc_verdict,
+from ccs.browser.mail import (  # noqa: E402
+    MailClient,
+    MailError,
+    magic_link,
+    verification_code,
 )
+from ccs.browser.prompts import (  # noqa: E402
+    parse_csv,
+    parse_prompt_file,
+    pick_prompt,
+    read_prompt_dir,
+)
+from ccs.browser.webrtc import webrtc_public_ips, webrtc_verdict  # noqa: E402
 from ccs.network import discover, geo, regions, stun  # noqa: E402
 from ccs.network.dns_relay import DnsRelay  # noqa: E402
 from ccs.network.doh import ATYP_DOMAIN, DohClient  # noqa: E402
@@ -255,6 +260,19 @@ class WarmupTests(unittest.TestCase):
                 raise RuntimeError(msg)
             return object()
 
+        class FakeLocator:
+            """`page.locator(sel).first.click()` 的最小替身。"""
+
+            @property
+            def first(self):
+                return self
+
+            def click(self):
+                pass
+
+        def locator(self, _sel):
+            return self.FakeLocator()
+
         def click(self, _sel):
             pass
 
@@ -297,15 +315,15 @@ class PromptFileTests(unittest.TestCase):
 
     def test_lines(self):
         text = "# 注释\n你好\n\n再见\n"
-        self.assertEqual(_parse_prompt_file(text), ["你好", "再见"])
+        self.assertEqual(parse_prompt_file(text), ["你好", "再见"])
 
     def test_blocks(self):
         text = "第一句\n---\n多行\n第二行\n"
-        self.assertEqual(_parse_prompt_file(text), ["第一句", "多行\n第二行"])
+        self.assertEqual(parse_prompt_file(text), ["第一句", "多行\n第二行"])
 
     def test_csv_with_header_and_commas(self):
         text = 'prompt\n"你好，世界"\n"a,b"\n'
-        self.assertEqual(_parse_csv(text), ["你好，世界", "a,b"])
+        self.assertEqual(parse_csv(text), ["你好，世界", "a,b"])
 
 
 class PromptDirTests(unittest.TestCase):
@@ -316,14 +334,14 @@ class PromptDirTests(unittest.TestCase):
             folder = Path(tmp)
             (folder / "02-b.md").write_text("第二句\n", encoding="utf-8")
             (folder / "01-a.md").write_text("---\nname: a\n---\n第一句\n", encoding="utf-8")
-            self.assertEqual(_read_prompt_dir(folder), ["第一句", "第二句"])
+            self.assertEqual(read_prompt_dir(folder), ["第一句", "第二句"])
 
     def test_dir_ignores_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             (folder / "empty.md").write_text("   \n", encoding="utf-8")
             (folder / "ok.txt").write_text("有用的一句\n", encoding="utf-8")
-            self.assertEqual(_read_prompt_dir(folder), ["有用的一句"])
+            self.assertEqual(read_prompt_dir(folder), ["有用的一句"])
 
 
 class PromptPickTests(unittest.TestCase):
@@ -337,14 +355,14 @@ class PromptPickTests(unittest.TestCase):
     def test_random_skips_last(self):
         prompts = ["甲", "乙", "丙"]
         with mock.patch("ccs.sandbox.store.read_account", return_value={"last_warmup_prompt": "甲"}):
-            picked = {_pick_prompt("x", prompts, self.cfg()) for _ in range(40)}
+            picked = {pick_prompt("x", prompts, self.cfg()) for _ in range(40)}
         self.assertEqual(picked, {"乙", "丙"})
 
     def test_daily_is_stable_within_a_day(self):
         prompts = ["甲", "乙", "丙"]
         with mock.patch("ccs.sandbox.store.read_account", return_value={}):
-            first = _pick_prompt("x", prompts, self.cfg("daily"))
-            second = _pick_prompt("x", prompts, self.cfg("daily"))
+            first = pick_prompt("x", prompts, self.cfg("daily"))
+            second = pick_prompt("x", prompts, self.cfg("daily"))
         self.assertEqual(first, second)
         self.assertIn(first, prompts)
 
@@ -588,3 +606,33 @@ class BundleTests(unittest.TestCase):
                                         (".claude.ai", "sessionKey")])
                 self.assertEqual(json.loads((root / "003b/meta.json").read_text())["fonts"],
                                  "western")
+
+
+class MailParsingTests(unittest.TestCase):
+    """登录邮件里的链接和验证码：抓错一个，注册就卡在等信那一步。"""
+
+    def test_magic_link_from_text_and_html(self):
+        self.assertEqual(
+            magic_link({"text": "点这里 https://claude.ai/magic-link#abc123 登录"}),
+            "https://claude.ai/magic-link#abc123")
+        # HTML 里的 &amp; 要先还原
+        self.assertEqual(
+            magic_link({"html": '<a href="https://claude.ai/magic-link#x?a=1&amp;b=2">开</a>'}),
+            "https://claude.ai/magic-link#x?a=1&b=2")
+        self.assertEqual(magic_link({"text": "没有链接"}), "")
+
+    def test_magic_link_ignores_lookalike_domain(self):
+        self.assertEqual(
+            magic_link({"text": "https://claude.ai.attacker.example/magic-link#bad"}), "")
+
+    def test_verification_code_prefers_keyword(self):
+        # 关键词后面紧跟的 6 位才算；订单号里的 12345678 不该被截成 6 位
+        self.assertEqual(verification_code({"text": "验证码：654321"}), "654321")
+        self.assertEqual(verification_code({"text": "订单 12345678"}), "")
+        self.assertEqual(verification_code({"text": "code 777888"}), "777888")
+        self.assertEqual(verification_code({"text": "没有数字"}), "")
+
+    def test_new_address_rejects_full_email(self):
+        client = MailClient("https://mail.example.test", "secret")
+        with self.assertRaises(MailError):
+            client.new_address("someone@example.test", "example.test")

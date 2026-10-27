@@ -1,4 +1,9 @@
-"""预检：用 curl 量出口 IP，和上次记录对比。"""
+"""预检：量出口 IP，和上次记录对比。
+
+**量的是 claude.ai 看到的那个 IP**：请求 `https://claude.ai/cdn-cgi/trace`，
+它和页面请求命中同一条分流规则，所以出口一致。用 ipify 之类的站点量出来的
+可能是另一条规则（比如未匹配流量），会和 Claude 实际看到的出口对不上。
+"""
 
 from __future__ import annotations
 
@@ -16,12 +21,18 @@ def _timeout(cfg: dict, key: str) -> float:
                                                                       defaults[key]))
 
 
-def curl_exit(proxy: str, cfg: dict) -> str:
-    """用 curl 量出口 IP。proxy 为空 = 不指定代理，量的是这台机器原生出口。"""
+TRACE_URL = "https://claude.ai/cdn-cgi/trace"
+# trace 不可用时的后备：这些站点走的是哪条规则不由我们决定，量出来的 IP 可能和 Claude 不同。
+FALLBACK_URL = "https://api.ipify.org"
+
+
+def _curl(url: str, proxy: str, cfg: dict) -> str:
     cmd = ["curl", "-s", "--max-time", str(_timeout(cfg, "preflight_s"))]
     if proxy:
-        cmd += ["-x", proxy]
-    cmd.append("https://api.ipify.org")
+        # 必须 socks5h：让域名交给代理（中继）解析。
+        # 用 socks5 的话 curl 会先在本机查 DNS —— 既绕过中继，也把查询暴露给本机。
+        cmd += ["-x", proxy.replace("socks5://", "socks5h://")]
+    cmd.append(url)
     try:
         out = subprocess.run(  # noqa: S603 - 命令和参数都是我们固定拼的，没有 shell
             cmd, capture_output=True, text=True, check=False,
@@ -29,6 +40,25 @@ def curl_exit(proxy: str, cfg: dict) -> str:
         return out.stdout.strip() or f"(失败: {out.stderr.strip()[:80]})"
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"(失败: {exc})"
+
+
+def trace_ip(text: str) -> str:
+    """从 `/cdn-cgi/trace` 的 key=value 里取 ip。"""
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "ip":
+            return value.strip()
+    return ""
+
+
+def curl_exit(proxy: str, cfg: dict) -> str:
+    """量 Claude 实际看到的出口 IP。proxy 为空 = 走这台机器原生出口。"""
+    ip = trace_ip(_curl(TRACE_URL, proxy, cfg))
+    if ip:
+        return ip
+    # trace 不通（代理挡了或页面变了）：退回旧办法，但记一笔，方便排查
+    say(ui.kv("注意", "claude.ai/cdn-cgi/trace 拿不到，改用第三方站点量出口（可能和 Claude 实际出口不同）"))
+    return _curl(FALLBACK_URL, proxy, cfg)
 
 
 def _check_region(ip: str, cfg: dict, *, allow_region: bool) -> None:

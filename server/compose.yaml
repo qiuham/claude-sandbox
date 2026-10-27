@@ -1,0 +1,19 @@
+# 用法（在 46.2 上）：
+#   CCS_CLOUD_ADMIN_TOKEN=<一串随机字符> docker compose up -d --build
+#
+# 只监听 127.0.0.1：外面走同机的反向代理加 HTTPS。
+# 包里有 sessionKey，不能明文过公网。
+#
+# 数据在宿主机的 /srv/ccs-cloud，容器重建不丢。
+
+services:
+  ccs-cloud:
+    build: .
+    image: ccs-cloud:local
+    environment:
+      CCS_CLOUD_ADMIN_TOKEN: ${CCS_CLOUD_ADMIN_TOKEN:?先设这个环境变量}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - /srv/ccs-cloud:/data
+    restart: unless-stopped

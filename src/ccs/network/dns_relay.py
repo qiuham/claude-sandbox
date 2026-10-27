@@ -66,6 +66,7 @@ class DnsRelay:
                                     or defaults["client_timeout_s"])
         self.connect_timeout = float(dns.get("connect_timeout_s")
                                      or defaults["connect_timeout_s"])
+        self.on_failure = str(dns.get("on_failure") or "stop").lower()
         self.stop_timeout = _timeout(cfg, "relay_stop_s")
         self.log = log or (lambda _msg: None)
         self.doh = DohClient(self.upstream, cfg)
@@ -143,10 +144,10 @@ class DnsRelay:
             if target is None:
                 return
             host, hosts, port = target
-            upstream_sock = self._connect_upstream(hosts, port)
+            upstream_sock = self._connect_upstream(host, hosts, port)
             self._track(upstream_sock)
             _reply(conn, 0)
-            self.log(f"OK {host}:{port} -> {hosts[0]}")
+            self.log(f"OK {host}:{port} -> {hosts[0] if hosts else '（上游解析）'}")
             threading.Thread(target=_pipe, args=(conn, upstream_sock), daemon=True).start()
             _pipe(upstream_sock, conn)
         except Exception as exc:  # noqa: BLE001 - 单条连接出错只能记日志，不能拖垮整个中继
@@ -176,10 +177,24 @@ class DnsRelay:
         host, is_ip = self._read_host(conn, atyp)
         port = struct.unpack("!H", recvn(conn, 2))[0]
         conn.settimeout(None)
-        candidates = [host] if is_ip else self.doh.resolve(host)
-        if not candidates:
-            msg = f"没有解析结果：{host}"
-            raise OSError(msg)
+        if is_ip:
+            candidates = [host]
+        else:
+            try:
+                candidates = self.doh.resolve(host)
+            except Exception as exc:
+                if self.on_failure != "proxy":
+                    msg = f"DoH 查询失败（{type(exc).__name__}），按配置停止：{host}"
+                    raise OSError(msg) from exc
+                self.log(f"DoH 失败（{type(exc).__name__}），改由上游代理解析 {host}")
+                candidates = []
+            else:
+                if not candidates:
+                    if self.on_failure != "proxy":
+                        msg = f"DoH 没有解析结果，按配置停止：{host}"
+                        raise OSError(msg)
+                    # 空列表 = 让上游代理自己解析这个域名（socks5h 语义）。
+                    self.log(f"DoH 没结果，改由上游代理解析 {host}")
         return host, candidates, port
 
     @staticmethod
@@ -194,9 +209,11 @@ class DnsRelay:
         msg = f"不认识的地址类型 {atyp}"
         raise OSError(msg)
 
-    def _connect_upstream(self, hosts: list[str], port: int) -> socket.socket:
+    def _connect_upstream(self, host: str, hosts: list[str], port: int) -> socket.socket:
+        """连上游。hosts 为空表示把域名交给上游解析（DoH 不可用时的退路）。"""
+        targets = hosts or [host]
         last: Exception | None = None
-        for target in hosts:
+        for target in targets:
             try:
                 return upstream_connect(self.upstream, target, port, self.connect_timeout)
             except OSError as exc:
