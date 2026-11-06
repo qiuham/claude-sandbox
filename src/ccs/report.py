@@ -42,6 +42,14 @@ PLAN_TIERS = {
     "default_claude_pro": "Pro",
     "default_claude_max_5x": "Max 5x",
     "default_claude_max_20x": "Max 20x",
+    # 席位套餐（Team / Enterprise）的限流档是代号，不是 5x/20x 那种倍数。
+    # 团队号拿到 default_raven；Team Premium 席位是 6.25× Pro（公开定价页）。
+    "default_raven": "Team·6.25x",
+}
+
+# 席位档 → 倍数。抓到 seat_tier 时用它细化，抓不到就用上面的默认值。
+SEAT_TIERS = {
+    "team_tier_1": "6.25x",
 }
 
 
@@ -50,6 +58,9 @@ def plan_label(acct: dict) -> str:
     raw = str(acct.get("plan_label") or acct.get("plan") or "").strip()
     if not raw:
         return "-"
+    seat = str(acct.get("seat_tier") or "").strip()
+    if raw == "default_raven" and seat in SEAT_TIERS:
+        return f"Team·{SEAT_TIERS[seat]}"
     return PLAN_TIERS.get(raw, raw)
 
 

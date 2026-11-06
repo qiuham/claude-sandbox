@@ -44,6 +44,9 @@ def harvest_account(page, name: str) -> dict | None:
         "org_created_at": org.get("created_at") or "",
         "plan": org.get("rate_limit_tier") or org.get("analytics_subscription_plan") or "",
         "plan_label": org.get("plan_display_name") or org.get("plan_display_label") or "",
+        # 席位套餐（Team / Enterprise）：档位是代号（default_raven），倍数在席位档里。
+        "org_type": org.get("organization_type") or "",
+        "seat_tier": org.get("seat_tier") or "",
         "billing_type": org.get("billing_type") or "",
         "session_key": cookies.get("sessionKey", ""),
         "captured_at": time.strftime("%Y-%m-%d %H:%M:%S"),
