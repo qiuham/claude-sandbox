@@ -16,6 +16,7 @@ INTRO = "ccs — Claude 注册沙盒：一个号一个沙盒，指纹、登录�
 HELP_SECTIONS = [
     ("常用", [
         ("new <名字> [--exit 地址|direct]", "建沙盒（出口自动探测本机代理）"),
+        ("add <名字> [--exit 地址|direct]", "建沙盒并直接打开网页（new + web）"),
         ("web <名字>", "打开窗口，手工注册或日常对话"),
         ("reg <名字> [--email 邮箱]", "半自动注册（新号首登）"),
         ("login <名字>", "重新登录（只用已登记的邮箱）"),
@@ -81,11 +82,28 @@ def _add_exit_flags(p) -> None:
     p.add_argument("--proxy", help="同 --exit 的地址写法（优先）")
 
 
+def _cmd_add(args) -> int:
+    """建沙盒并直接打开网页：new + web 一步，不用敲两次。"""
+    args.open_after = True
+    rc = commands.cmd_new(args)
+    if rc:
+        return rc
+    return tasks.cmd_web(args)
+
+
 def _add_create_commands(sub) -> None:
     p = sub.add_parser("new", help="建沙盒")
     p.add_argument("name")
     _add_exit_flags(p)
     p.set_defaults(func=commands.cmd_new)
+
+    p = sub.add_parser("add", help="建沙盒并直接打开网页（new + web）")
+    p.add_argument("name")
+    _add_exit_flags(p)
+    p.add_argument("--timeout", type=int, default=0, help="多少秒后自动关闭（0 = 一直开着）")
+    _add_record_flag(p)
+    _add_safety_flags(p)
+    p.set_defaults(func=_cmd_add)
 
 
 def _add_record_flag(p) -> None:

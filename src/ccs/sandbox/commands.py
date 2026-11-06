@@ -176,8 +176,8 @@ def cmd_rm(args) -> int:
     if not d.is_dir():
         die(f"没有这个沙盒: {args.name}")
     if not args.force:
-        answer = input(f"删除 {d}（含 profile / cookie）？输入 yes 确认: ").strip().lower()
-        if answer != "yes":
+        answer = input(f"删除 {d}（含 profile / cookie）？输入 y 或 yes 确认: ").strip().lower()
+        if answer not in ("y", "yes"):
             say("已取消")
             return 1
     shutil.rmtree(d)
