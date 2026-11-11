@@ -216,9 +216,9 @@ ccs reg 008
 
 ```toml
 [mail]
-base = "https://api.justlovecode.com"
+base = "https://api.hamqiu.com"
 admin_auth = "…"
-domain = "justlovecode.com"
+domain = "onlylovecode.com"
 ```
 
 ## 账号信息
